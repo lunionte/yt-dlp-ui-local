@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Save, RotateCw } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Save, RotateCw, FolderOpen, ExternalLink, Loader2 } from 'lucide-react';
 import { SystemStatus } from '../types/download.js';
 
 interface SettingsModalProps {
@@ -21,6 +21,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultDownloadDir, setDefaultDownloadDir] = useState('');
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(2);
   const [saving, setSaving] = useState(false);
+  const [browsingField, setBrowsingField] = useState<'ytdlp' | 'ffmpeg' | 'downloadDir' | null>(null);
+  const [openingFolder, setOpeningFolder] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -34,6 +36,63 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, [systemStatus]);
 
   if (!isOpen) return null;
+
+  const handleBrowse = async (type: 'file' | 'folder', field: 'ytdlp' | 'ffmpeg' | 'downloadDir') => {
+    setBrowsingField(field);
+    try {
+      let title = 'Selecione a pasta';
+      let defaultPath = '';
+      let filter: string | undefined = undefined;
+
+      if (field === 'ytdlp') {
+        title = 'Selecione o executável yt-dlp';
+        defaultPath = ytdlpPath;
+        filter = 'Executáveis (*.exe)|*.exe|Todos os arquivos (*.*)|*.*';
+      } else if (field === 'ffmpeg') {
+        title = 'Selecione o executável FFmpeg';
+        defaultPath = ffmpegPath;
+        filter = 'Executáveis (*.exe)|*.exe|Todos os arquivos (*.*)|*.*';
+      } else {
+        title = 'Selecione a pasta padrão de downloads';
+        defaultPath = defaultDownloadDir;
+      }
+
+      const res = await fetch('/api/system/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, title, defaultPath, filter }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          if (field === 'ytdlp') setYtdlpPath(data.path);
+          if (field === 'ffmpeg') setFfmpegPath(data.path);
+          if (field === 'downloadDir') setDefaultDownloadDir(data.path);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao abrir diálogo nativo:', err);
+    } finally {
+      setBrowsingField(null);
+    }
+  };
+
+  const handleOpenFolder = async (folderPath: string) => {
+    if (!folderPath) return;
+    setOpeningFolder(true);
+    try {
+      await fetch('/api/system/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath }),
+      });
+    } catch (err) {
+      console.error('Erro ao abrir pasta no explorador:', err);
+    } finally {
+      setOpeningFolder(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +125,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setSaving(false);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
@@ -149,39 +209,101 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Caminho do executável yt-dlp
               </label>
-              <input
-                type="text"
-                value={ytdlpPath}
-                onChange={(e) => setYtdlpPath(e.target.value)}
-                placeholder="Ex: C:\yt-dlp.exe ou apenas yt-dlp se no PATH"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={ytdlpPath}
+                  onChange={(e) => setYtdlpPath(e.target.value)}
+                  placeholder="Ex: C:\yt-dlp.exe ou apenas yt-dlp se no PATH"
+                  className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleBrowse('file', 'ytdlp')}
+                  disabled={browsingField !== null}
+                  title="Procurar executável yt-dlp no computador"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {browsingField === 'ytdlp' ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  ) : (
+                    <FolderOpen className="w-4 h-4 text-blue-600" />
+                  )}
+                  <span className="hidden sm:inline">Procurar</span>
+                </button>
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Caminho do executável FFmpeg
               </label>
-              <input
-                type="text"
-                value={ffmpegPath}
-                onChange={(e) => setFfmpegPath(e.target.value)}
-                placeholder="Ex: C:\ffmpeg\bin\ffmpeg.exe"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={ffmpegPath}
+                  onChange={(e) => setFfmpegPath(e.target.value)}
+                  placeholder="Ex: C:\ffmpeg\bin\ffmpeg.exe"
+                  className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleBrowse('file', 'ffmpeg')}
+                  disabled={browsingField !== null}
+                  title="Procurar executável FFmpeg no computador"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {browsingField === 'ffmpeg' ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  ) : (
+                    <FolderOpen className="w-4 h-4 text-blue-600" />
+                  )}
+                  <span className="hidden sm:inline">Procurar</span>
+                </button>
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Pasta Padrão de Download
               </label>
-              <input
-                type="text"
-                value={defaultDownloadDir}
-                onChange={(e) => setDefaultDownloadDir(e.target.value)}
-                placeholder="Ex: C:\Users\nome\Downloads"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={defaultDownloadDir}
+                  onChange={(e) => setDefaultDownloadDir(e.target.value)}
+                  placeholder="Ex: C:\Users\nome\Downloads"
+                  className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleBrowse('folder', 'downloadDir')}
+                  disabled={browsingField !== null}
+                  title="Selecionar pasta no computador"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {browsingField === 'downloadDir' ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  ) : (
+                    <FolderOpen className="w-4 h-4 text-blue-600" />
+                  )}
+                  <span className="hidden sm:inline">Procurar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenFolder(defaultDownloadDir)}
+                  disabled={!defaultDownloadDir || openingFolder}
+                  title="Abrir pasta no Explorador de Arquivos do Windows"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {openingFolder ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+                  ) : (
+                    <ExternalLink className="w-4 h-4 text-slate-600" />
+                  )}
+                  <span className="hidden sm:inline">Abrir</span>
+                </button>
+              </div>
             </div>
 
             <div>

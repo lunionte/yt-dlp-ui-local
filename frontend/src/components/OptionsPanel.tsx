@@ -1,9 +1,13 @@
+import React, { useState } from 'react';
 import {
   Video,
   Music,
   Download,
   FileText,
   SlidersHorizontal,
+  FolderOpen,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import {
   CreateDownloadPayload,
@@ -31,6 +35,8 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
   onStartDownload,
   isStarting,
 }) => {
+  const [isBrowsing, setIsBrowsing] = useState(false);
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const isVideo = options.mode === 'video';
 
   const update = <K extends keyof CreateDownloadPayload>(key: K, value: CreateDownloadPayload[K]) => {
@@ -39,6 +45,51 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
       [key]: value,
     });
   };
+
+  const handleBrowseFolder = async () => {
+    setIsBrowsing(true);
+    try {
+      const currentFolder = options.outputDir || defaultFolder;
+      const res = await fetch('/api/system/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'folder',
+          title: 'Selecione a pasta de destino do download',
+          defaultPath: currentFolder,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          update('outputDir', data.path);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao procurar pasta de destino:', err);
+    } finally {
+      setIsBrowsing(false);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    const currentFolder = options.outputDir || defaultFolder;
+    if (!currentFolder) return;
+    setIsOpeningFolder(true);
+    try {
+      await fetch('/api/system/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: currentFolder }),
+      });
+    } catch (err) {
+      console.error('Erro ao abrir pasta no explorador:', err);
+    } finally {
+      setIsOpeningFolder(false);
+    }
+  };
+
 
   // Resoluções disponíveis
   const resolutions: { label: string; value: VideoResolution }[] = [
@@ -194,8 +245,36 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
               type="text"
               value={options.outputDir || defaultFolder}
               onChange={(e) => update('outputDir', e.target.value)}
-              className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 truncate"
+              className="flex-1 min-w-0 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 truncate"
             />
+            <button
+              type="button"
+              onClick={handleBrowseFolder}
+              disabled={isBrowsing}
+              title="Selecionar pasta no computador"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {isBrowsing ? (
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              ) : (
+                <FolderOpen className="w-4 h-4 text-blue-600" />
+              )}
+              <span className="hidden sm:inline">Procurar</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenFolder}
+              disabled={isOpeningFolder || !(options.outputDir || defaultFolder)}
+              title="Abrir pasta no Explorador de Arquivos do Windows"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              {isOpeningFolder ? (
+                <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+              ) : (
+                <ExternalLink className="w-4 h-4 text-slate-600" />
+              )}
+              <span className="hidden sm:inline">Abrir</span>
+            </button>
           </div>
         </div>
       </div>

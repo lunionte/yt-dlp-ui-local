@@ -11,6 +11,7 @@ import {
   Zap,
   HardDrive,
   FileCheck,
+  FolderOpen,
 } from 'lucide-react';
 import { DownloadJob } from '../types/download.js';
 import { LogViewer } from './LogViewer.js';
@@ -30,6 +31,19 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
   const isCompleted = job.status === 'completed';
   const isError = job.status === 'error';
   const isCancelled = job.status === 'cancelled';
+
+  const handleOpenFolder = async () => {
+    try {
+      await fetch('/api/system/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderPath: job.options.outputDir }),
+      });
+    } catch (err) {
+      console.error('Erro ao abrir pasta no explorador:', err);
+    }
+  };
+
 
   const handleCancel = async () => {
     setCancelling(true);
@@ -132,6 +146,18 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
               >
                 <Ban className="w-3.5 h-3.5" />
                 <span>Cancelar</span>
+              </button>
+            )}
+
+            {isCompleted && (
+              <button
+                type="button"
+                onClick={handleOpenFolder}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium transition cursor-pointer"
+                title="Abrir pasta de download no Explorador de Arquivos"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">Pasta</span>
               </button>
             )}
 
