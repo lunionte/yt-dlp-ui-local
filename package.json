@@ -1,0 +1,18 @@
+{
+  "name": "yt-dlp-ui-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "start": "node backend/dist/server.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

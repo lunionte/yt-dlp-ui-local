@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/downloaditem.tsx","./src/components/header.tsx","./src/components/logviewer.tsx","./src/components/optionspanel.tsx","./src/components/settingsmodal.tsx","./src/components/urlheroinput.tsx","./src/hooks/usedownloadevents.ts","./src/types/download.ts"],"version":"5.9.3"}
