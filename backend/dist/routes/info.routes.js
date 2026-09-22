@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { fetchVideoInfo } from '../services/ytdlp.service.js';
+import { normalizeMediaUrl } from '../utils/url.utils.js';
 const router = Router();
 const InfoQuerySchema = z.object({
-    url: z.string().url('URL inválida').min(1, 'A URL é obrigatória'),
+    url: z.string().min(1, 'A URL é obrigatória').transform(normalizeMediaUrl).pipe(z.string().url('URL inválida')),
 });
 router.post('/', async (req, res) => {
     const result = InfoQuerySchema.safeParse(req.body);

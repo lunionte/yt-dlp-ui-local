@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header.js';
 import { UrlHeroInput } from './components/UrlHeroInput.js';
 import { OptionsPanel } from './components/OptionsPanel.js';
@@ -11,6 +11,7 @@ import {
   VideoMetadata,
 } from './types/download.js';
 import { ListFilter, AlertTriangle } from 'lucide-react';
+import { normalizeMediaUrl } from './utils/url.js';
 
 export const App: React.FC = () => {
   const [url, setUrl] = useState('');
@@ -21,6 +22,7 @@ export const App: React.FC = () => {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // embedThumbnail desativado por padrão conforme solicitado pelo usuário
   const [downloadOptions, setDownloadOptions] = useState<CreateDownloadPayload>({
     url: '',
     mode: 'video',
@@ -29,11 +31,12 @@ export const App: React.FC = () => {
     audioFormat: 'mp3',
     audioQuality: '320k',
     customFilename: '',
-    embedThumbnail: true,
+    embedThumbnail: false,
     embedSubtitles: false,
   });
 
   const { jobs, connected, cancelJob, deleteJob } = useDownloadEvents();
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Busca status do sistema ao carregar
   const fetchSystemStatus = useCallback(async () => {
@@ -58,9 +61,18 @@ export const App: React.FC = () => {
     fetchSystemStatus();
   }, [fetchSystemStatus]);
 
-  // Consulta metadados de vídeo da URL
-  const handleFetchMetadata = async (targetUrl: string) => {
-    if (!targetUrl) return;
+  // Consulta metadados de vídeo da URL com cancelamento automático de requisição anterior
+  const handleFetchMetadata = useCallback(async (targetUrl: string) => {
+    const normalized = normalizeMediaUrl(targetUrl);
+    if (!normalized) return;
+
+    // Cancela requisição anterior se o usuário tiver digitado ou colado outro link
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoadingMetadata(true);
     setActionError(null);
 
@@ -68,7 +80,8 @@ export const App: React.FC = () => {
       const res = await fetch('/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: targetUrl }),
+        body: JSON.stringify({ url: normalized }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -80,25 +93,41 @@ export const App: React.FC = () => {
       setMetadata(data);
       setDownloadOptions((prev) => ({
         ...prev,
-        url: targetUrl,
+        url: normalized,
         videoResolution: data.availableResolutions[0] ? (data.availableResolutions[0] as any) : '1080p',
       }));
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return; // Requisição cancelada intencionalmente por uma nova
+      }
       setActionError(err.message || 'Erro ao conectar ou ler URL');
       setMetadata(null);
     } finally {
-      setIsLoadingMetadata(false);
+      if (abortControllerRef.current === controller) {
+        setIsLoadingMetadata(false);
+        abortControllerRef.current = null;
+      }
     }
-  };
+  }, []);
+
+  const handleClearMetadata = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoadingMetadata(false);
+    setMetadata(null);
+  }, []);
 
   // Inicia o download
   const handleStartDownload = async () => {
-    const targetUrl = url.trim() || downloadOptions.url;
-    if (!targetUrl) {
+    const rawUrl = url.trim() || downloadOptions.url;
+    if (!rawUrl) {
       setActionError('Por favor, informe uma URL válida.');
       return;
     }
 
+    const targetUrl = normalizeMediaUrl(rawUrl);
     setIsStartingDownload(true);
     setActionError(null);
 
@@ -133,6 +162,7 @@ export const App: React.FC = () => {
       setIsStartingDownload(false);
     }
   };
+
 
   const activeJobs = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing');
 
@@ -173,8 +203,9 @@ export const App: React.FC = () => {
           onFetchMetadata={handleFetchMetadata}
           isLoading={isLoadingMetadata}
           metadata={metadata}
-          onClearMetadata={() => setMetadata(null)}
+          onClearMetadata={handleClearMetadata}
         />
+
 
         {actionError && (
           <div className="bg-rose-50 border border-rose-200/80 text-rose-700 text-xs sm:text-sm rounded-2xl p-4 text-center">

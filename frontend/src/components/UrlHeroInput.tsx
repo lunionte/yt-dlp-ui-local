@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Music, Clipboard, Sparkles, Loader2, X, Clock, User } from 'lucide-react';
 import { VideoMetadata } from '../types/download.js';
+import { normalizeMediaUrl, isLikelyMediaUrl } from '../utils/url.js';
 
 interface UrlHeroInputProps {
   url: string;
@@ -20,17 +21,55 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   onClearMetadata,
 }) => {
   const [pasteError, setPasteError] = useState<string | null>(null);
+  const lastFetchedUrlRef = useRef<string>('');
 
-  const handlePaste = async () => {
+  // Auto-fetch inteligente com debounce de 450ms ao digitar
+  useEffect(() => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      lastFetchedUrlRef.current = '';
+      if (metadata) {
+        onClearMetadata();
+      }
+      return;
+    }
+
+    if (!isLikelyMediaUrl(trimmed)) {
+      return;
+    }
+
+    const normalized = normalizeMediaUrl(trimmed);
+    if (normalized === lastFetchedUrlRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastFetchedUrlRef.current = normalized;
+      onFetchMetadata(normalized);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [url, metadata, onClearMetadata, onFetchMetadata]);
+
+  // Dispara busca instantânea (sem delay) ao colar
+  const triggerImmediateFetch = (rawText: string) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return;
+    onChangeUrl(trimmed);
+
+    if (isLikelyMediaUrl(trimmed)) {
+      const normalized = normalizeMediaUrl(trimmed);
+      lastFetchedUrlRef.current = normalized;
+      onFetchMetadata(normalized);
+    }
+  };
+
+  const handlePasteClick = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        onChangeUrl(text.trim());
         setPasteError(null);
-        // Tenta buscar automaticamente se for URL válida
-        if (text.startsWith('http://') || text.startsWith('https://')) {
-          onFetchMetadata(text.trim());
-        }
+        triggerImmediateFetch(text);
       }
     } catch {
       setPasteError('Permissão para área de transferência negada');
@@ -38,14 +77,26 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
     }
   };
 
+  const handleInputPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData('text');
+    if (pastedText && isLikelyMediaUrl(pastedText)) {
+      e.preventDefault();
+      triggerImmediateFetch(pastedText);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (url.trim()) {
-      onFetchMetadata(url.trim());
+    const trimmed = url.trim();
+    if (trimmed) {
+      const normalized = normalizeMediaUrl(trimmed);
+      lastFetchedUrlRef.current = normalized;
+      onFetchMetadata(normalized);
     }
   };
 
   const handleClear = () => {
+    lastFetchedUrlRef.current = '';
     onChangeUrl('');
     onClearMetadata();
   };
@@ -58,9 +109,16 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
       </div>
 
       <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-2">
-        insira o link aqui ou <button type="button" onClick={handlePaste} className="text-blue-600 hover:text-blue-700 underline underline-offset-4 cursor-pointer font-bold">cole</button>
+        insira o link aqui ou{' '}
+        <button
+          type="button"
+          onClick={handlePasteClick}
+          className="text-blue-600 hover:text-blue-700 underline underline-offset-4 cursor-pointer font-bold"
+        >
+          cole
+        </button>
       </h1>
-      
+
       <p className="text-xs sm:text-sm text-slate-400 font-normal mb-8 max-w-lg mx-auto">
         YouTube, Instagram, TikTok, SoundCloud, Bandcamp, Twitter/X e +1.000 sites
       </p>
@@ -69,11 +127,16 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
       <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
         <div className="relative flex items-center shadow-xs rounded-2xl border border-slate-200 bg-white hover:border-slate-300 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100 transition">
           <input
-            type="url"
+            type="text"
+            inputMode="url"
             value={url}
             onChange={(e) => onChangeUrl(e.target.value)}
-            placeholder="https://www.youtube.com/watch?v=..."
+            onPaste={handleInputPaste}
+            placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)"
             className="w-full py-4 pl-5 pr-28 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base bg-transparent rounded-2xl outline-none"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck="false"
             required
           />
 
@@ -82,7 +145,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition"
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer"
                 title="Limpar campo"
               >
                 <X className="w-4 h-4" />
@@ -92,7 +155,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             {!url && (
               <button
                 type="button"
-                onClick={handlePaste}
+                onClick={handlePasteClick}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition cursor-pointer"
               >
                 <Clipboard className="w-3.5 h-3.5" />
@@ -108,7 +171,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="hidden sm:inline">Carregando</span>
+                  <span className="hidden sm:inline">Analisando...</span>
                 </>
               ) : (
                 <>

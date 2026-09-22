@@ -4,49 +4,107 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { loadConfig } from '../config/paths.js';
 import { PROGRESS_PREFIX } from './parser.service.js';
+import { normalizeMediaUrl } from '../utils/url.utils.js';
 const execFileAsync = promisify(execFile);
-export async function fetchVideoInfo(url) {
-    const config = loadConfig();
-    const ytdlpPath = config.ytdlpPath;
-    const args = [
-        '--dump-single-json',
-        '--no-playlist',
-        '--no-warnings',
-        '--skip-download',
-        url,
-    ];
-    try {
-        const { stdout } = await execFileAsync(ytdlpPath, args, {
-            maxBuffer: 50 * 1024 * 1024, // 50MB para metadados detalhados com muitos formatos
-            timeout: 30000,
-        });
-        const data = JSON.parse(stdout);
-        // Coleta resoluções disponíveis
-        const resolutionsSet = new Set();
-        if (Array.isArray(data.formats)) {
-            for (const f of data.formats) {
-                if (f.height && f.vcodec && f.vcodec !== 'none') {
-                    resolutionsSet.add(`${f.height}p`);
+const metadataCache = new Map();
+const inFlightFetches = new Map();
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
+export async function fetchVideoInfo(rawUrl) {
+    const normalizedUrl = normalizeMediaUrl(rawUrl);
+    // 1. Verificação no cache de memória
+    const cached = metadataCache.get(normalizedUrl);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.data;
+    }
+    // 2. Deduplicação de requisições concorrentes (se já estiver buscando a mesma URL, aguarda a mesma promessa)
+    if (inFlightFetches.has(normalizedUrl)) {
+        return inFlightFetches.get(normalizedUrl);
+    }
+    const fetchPromise = (async () => {
+        const config = loadConfig();
+        const ytdlpPath = config.ytdlpPath;
+        // Flags de alta performance para extração rápida de metadados
+        const buildArgs = (skipDash = true) => {
+            const args = [
+                '--dump-single-json',
+                '--no-playlist',
+                '--no-warnings',
+                '--skip-download',
+                '--no-check-certificates',
+                '--no-call-home',
+                '--socket-timeout',
+                '10',
+            ];
+            if (skipDash && (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be'))) {
+                args.push('--extractor-args', 'youtube:skip=dash');
+            }
+            args.push(normalizedUrl);
+            return args;
+        };
+        let stdout = '';
+        try {
+            const res = await execFileAsync(ytdlpPath, buildArgs(true), {
+                maxBuffer: 50 * 1024 * 1024,
+                timeout: 30000,
+            });
+            stdout = res.stdout;
+        }
+        catch {
+            // Fallback sem youtube:skip=dash caso o extrator específico falhe
+            const res = await execFileAsync(ytdlpPath, buildArgs(false), {
+                maxBuffer: 50 * 1024 * 1024,
+                timeout: 30000,
+            });
+            stdout = res.stdout;
+        }
+        try {
+            const data = JSON.parse(stdout);
+            // Coleta resoluções disponíveis
+            const resolutionsSet = new Set();
+            if (Array.isArray(data.formats)) {
+                for (const f of data.formats) {
+                    if (f.height && f.vcodec && f.vcodec !== 'none') {
+                        resolutionsSet.add(`${f.height}p`);
+                    }
                 }
             }
+            // Ordena do maior para o menor
+            const availableResolutions = Array.from(resolutionsSet).sort((a, b) => {
+                return parseInt(b, 10) - parseInt(a, 10);
+            });
+            const result = {
+                id: data.id || 'unknown',
+                title: data.title || 'Sem título',
+                thumbnail: data.thumbnail,
+                duration: data.duration,
+                durationString: data.duration_string,
+                uploader: data.uploader || data.channel,
+                description: data.description ? data.description.slice(0, 300) : undefined,
+                availableResolutions,
+            };
+            // Armazena no cache
+            metadataCache.set(normalizedUrl, {
+                data: result,
+                expiresAt: Date.now() + CACHE_TTL_MS,
+            });
+            // Limpeza de cache antigo para economizar memória (máximo 100 itens)
+            if (metadataCache.size > 100) {
+                const oldestKey = metadataCache.keys().next().value;
+                if (oldestKey)
+                    metadataCache.delete(oldestKey);
+            }
+            return result;
         }
-        // Ordena do maior para o menor
-        const availableResolutions = Array.from(resolutionsSet).sort((a, b) => {
-            return parseInt(b, 10) - parseInt(a, 10);
-        });
-        return {
-            id: data.id || 'unknown',
-            title: data.title || 'Sem título',
-            thumbnail: data.thumbnail,
-            duration: data.duration,
-            durationString: data.duration_string,
-            uploader: data.uploader || data.channel,
-            description: data.description ? data.description.slice(0, 300) : undefined,
-            availableResolutions,
-        };
+        catch (err) {
+            throw new Error(`Falha ao obter dados do vídeo: ${err.message}`);
+        }
+    })();
+    inFlightFetches.set(normalizedUrl, fetchPromise);
+    try {
+        return await fetchPromise;
     }
-    catch (err) {
-        throw new Error(`Falha ao obter dados do vídeo: ${err.message}`);
+    finally {
+        inFlightFetches.delete(normalizedUrl);
     }
 }
 export function buildYtdlpArgs(options) {
@@ -109,7 +167,7 @@ export function buildYtdlpArgs(options) {
     if (options.embedSubtitles) {
         args.push('--embed-subs', '--sub-langs', 'all,-live_chat');
     }
-    // A URL sempre deve ser o último argumento
-    args.push(options.url);
+    // A URL sempre deve ser o último argumento (normalizada)
+    args.push(normalizeMediaUrl(options.url));
     return { args, outputFolder };
 }

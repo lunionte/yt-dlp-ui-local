@@ -3,10 +3,19 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 const execFileAsync = promisify(execFile);
+let isDialogActive = false;
 /**
  * Abre o seletor nativo do sistema operacional (Windows, macOS ou Linux).
  */
 export async function selectPathViaDialog(options) {
+    if (isDialogActive) {
+        return {
+            path: null,
+            cancelled: true,
+            error: 'Um diálogo de seleção já está aberto no computador.',
+        };
+    }
+    isDialogActive = true;
     const isFolder = options.type === 'folder';
     const title = options.title || (isFolder ? 'Selecione a pasta' : 'Selecione o arquivo executável');
     const initialPath = options.defaultPath ? path.resolve(options.defaultPath) : '';
@@ -31,9 +40,12 @@ export async function selectPathViaDialog(options) {
             error: err.message || 'Falha ao abrir diálogo do sistema operacional',
         };
     }
+    finally {
+        isDialogActive = false;
+    }
 }
 /**
- * Windows: Executa PowerShell com System.Windows.Forms em modo STA
+ * Windows: Executa PowerShell com System.Windows.Forms em modo STA otimizado
  */
 async function selectPathWindows(opts) {
     const titleB64 = Buffer.from(opts.title, 'utf-8').toString('base64');
@@ -47,6 +59,7 @@ $form.TopMost = $true
 $form.TopLevel = $true
 $form.Opacity = 0
 $form.ShowInTaskbar = $false
+$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 
 $title = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${titleB64}'))
 $initPath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${pathB64}'))
@@ -60,6 +73,7 @@ if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
 }
 
 $form.Show()
+$form.Activate()
 $form.BringToFront()
 $result = $dialog.ShowDialog($form)
 
@@ -70,6 +84,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 
 $form.Dispose()
 $dialog.Dispose()
+[System.Environment]::Exit(0)
 `.trim()
         : `
 Add-Type -AssemblyName System.Windows.Forms
@@ -78,6 +93,7 @@ $form.TopMost = $true
 $form.TopLevel = $true
 $form.Opacity = 0
 $form.ShowInTaskbar = $false
+$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 
 $title = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${titleB64}'))
 $initPath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${pathB64}'))
@@ -97,6 +113,7 @@ if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
 }
 
 $form.Show()
+$form.Activate()
 $form.BringToFront()
 $result = $dialog.ShowDialog($form)
 
@@ -107,9 +124,10 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 
 $form.Dispose()
 $dialog.Dispose()
+[System.Environment]::Exit(0)
 `.trim();
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', encoded], {
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
         timeout: 120000,
     });
     const selected = stdout.trim();
