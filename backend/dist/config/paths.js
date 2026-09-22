@@ -5,11 +5,23 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 // O workspace raiz fica um nível acima da pasta backend se estivermos em backend/
-const rootDir = path.resolve(process.cwd(), fs.existsSync(path.resolve(process.cwd(), 'yt-dlp.exe')) ? '.' : '..');
-const configFilePath = path.resolve(rootDir, 'config.json');
+// No Electron, APP_ROOT é definido pelo main process
+const rootDir = process.env.APP_ROOT || path.resolve(process.cwd(), fs.existsSync(path.resolve(process.cwd(), 'yt-dlp.exe')) ? '.' : '..');
+// No Electron empacotado, config.json fica na pasta de dados do usuário (install dir é read-only)
+// No modo web ou Electron dev, fica na raiz do projeto
+const configFilePath = process.env.ELECTRON_USER_DATA
+    ? path.resolve(process.env.ELECTRON_USER_DATA, 'config.json')
+    : path.resolve(rootDir, 'config.json');
 const defaultDownloadDir = path.resolve(os.homedir(), 'Downloads');
 function findBinary(name) {
     const exeName = process.platform === 'win32' ? `${name}.exe` : name;
+    // 0. Electron extraResources (app empacotado)
+    if (process.env.ELECTRON && process.resourcesPath) {
+        const inResources = path.resolve(process.resourcesPath, exeName);
+        if (fs.existsSync(inResources)) {
+            return inResources;
+        }
+    }
     // 1. Procurar na raiz do projeto
     const inRoot = path.resolve(rootDir, exeName);
     if (fs.existsSync(inRoot)) {

@@ -3,3 +3,10 @@ node_modules
 
 *.exe
 agents.md
+release/
+desktop/dist/
+backend/dist/
+frontend/dist/
+config.json
+
+release

@@ -1,38 +1,69 @@
-# yt-dlp GUI (Local Web Downloader + FFmpeg)
+# yt-dlp GUI (Local Web Downloader & Desktop Windows + FFmpeg)
 
-Interface gráfica moderna, limpa e responsiva para **yt-dlp** e **FFmpeg**, projetada especificamente para execução local e pessoal na sua máquina.
+Interface gráfica moderna, limpa e responsiva para **yt-dlp** e **FFmpeg**, projetada para rodar localmente no seu computador. Disponível tanto como **aplicativo Desktop nativo para Windows (.exe instalador e portátil)** quanto como **aplicação Web local**.
 
-Inspirada no design minimalista do **Pillowcase** (tema claro com fundo branco, cantos arredondados, azul cobalto de destaque e foco total no conteúdo).
+Inspirada no design minimalista do **Pillowcase** (tema claro com fundo suave, cantos arredondados, azul cobalto de destaque e foco total na usabilidade).
 
 ---
 
-## 🚀 Como Executar
+## 💻 Aplicativo Desktop para Windows
 
-### Opção 1: Modo de Uso Direto (Recomendado)
-Para iniciar a aplicação pronta para uso em uma única porta:
+O projeto já inclui executáveis prontos para Windows de 64 bits com **yt-dlp e FFmpeg embutidos** (não é necessário instalar nada externamente).
+
+Os executáveis gerados ficam na pasta [`release/`](release/):
+
+| Executável | Tipo | Como Usar |
+|---|---|---|
+| **`yt-dlp GUI Setup 1.0.0.exe`** | **Instalador Oficial (NSIS)** | Dá duplo clique para instalar. Cria atalhos na Área de Trabalho e no Menu Iniciar, com suporte a desinstalação pelo Painel de Controle do Windows. |
+| **`yt-dlp-GUI-Portable-1.0.0.exe`** | **Executável Portátil Único** | **Não requer instalação!** Você pode copiar para a Área de Trabalho, pasta Documentos ou um Pen Drive e abrir com duplo clique direto de qualquer lugar. |
+
+### Recursos Exclusivos do Modo Desktop
+- **Bandeja do Sistema (System Tray)**: Ao fechar ou minimizar a janela, o app pode continuar na bandeja ao lado do relógio do Windows.
+  - Clique simples ou duplo no ícone para restaurar a janela.
+  - Clique com o botão direito no ícone para abrir o menu: permite ativar/desativar o comportamento de minimizar para a bandeja e sair do programa.
+- **Diálogos Nativos Ultrarrápidos**: A seleção de pastas e executáveis abre instantaneamente (0ms) usando a API nativa do Windows.
+- **Notificações do Windows**: Dispara notificações nativas no canto da tela quando qualquer download for concluído com sucesso.
+- **Instância Única (Single-Instance)**: Impede a abertura acidental de várias instâncias simultâneas do programa.
+
+---
+
+## 🚀 Como Executar pelo Código-Fonte
+
+### Modo Desktop Windows (Electron)
 ```bash
+# 1. Instalar dependências
+npm install
+
+# 2. Executar o aplicativo desktop em modo de desenvolvimento
+npm run desktop:dev
+
+# 3. Compilar e gerar o Instalador e o Portátil na pasta release/
+npm run desktop:dist
+```
+
+### Modo Web Local (Navegador)
+```bash
+# 1. Modo de Produção Web Local (porta 3001)
 npm start
-```
-Acesse no navegador: **[http://localhost:3001](http://localhost:3001)**
+# Acesse: http://localhost:3001
 
-### Opção 2: Modo de Desenvolvimento (com Hot Reloading / HMR)
-Para editar o código com Fast Refresh no React e reinicialização automática do Express:
-```bash
+# 2. Modo de Desenvolvimento Web (com Hot-Reloading / HMR)
 npm run dev
+# Frontend (Vite): http://localhost:5173
+# Backend (Express): http://localhost:3001
 ```
-- Frontend (Vite): **[http://localhost:5173](http://localhost:5173)**
-- Backend (Express): **[http://localhost:3001](http://localhost:3001)**
 
 ---
 
-## 🛠️ Ferramentas Externas
+## 🛠️ Ferramentas Externas Embutidas
 
-Os executáveis colocados na raiz do projeto são detectados e priorizados automaticamente:
-- `yt-dlp.exe`
-- `ffmpeg.exe`
-- `ffprobe.exe`
+Tanto a versão Desktop quanto a versão Web utilizam as versões oficiais mais recentes:
+- `yt-dlp.exe`: Motor de download e extração de metadados
+- `ffmpeg.exe`: Processamento, muxing e extração de áudio
+- `ffprobe.exe`: Inspeção de codecs e streams
 
-Caso queira alterar os caminhos ou a pasta padrão de downloads (`C:\Users\<Você>\Downloads`), basta clicar no botão **"Binários Prontos" / "Configurações"** no topo direito da tela.
+> **No Desktop (.exe)**: Os binários já vêm empacotados dentro do executável.  
+> **No modo Web local**: Os binários colocados na raiz do projeto são detectados e priorizados automaticamente.
 
 ---
 
@@ -56,30 +87,70 @@ Caso queira alterar os caminhos ou a pasta padrão de downloads (`C:\Users\<Voc�
 
 ---
 
-## 🏗️ Arquitetura
+## 📦 Como Publicar uma Release no GitHub
+
+Para disponibilizar os executáveis para download na página do seu repositório no GitHub:
+
+1. **Gere os executáveis**:
+   ```bash
+   npm run desktop:dist
+   ```
+   Os arquivos estarão na pasta `release/`.
+
+2. **No GitHub**:
+   - Acesse o seu repositório no GitHub pelo navegador.
+   - Na barra lateral direita, clique em **Releases** (ou acesse `https://github.com/SEU_USUARIO/SEU_REPO/releases`).
+   - Clique no botão **"Draft a new release"**.
+   - Crie uma nova tag (por exemplo, `v1.0.0`) e dê um título (ex: `yt-dlp GUI v1.0.0 - Windows`).
+   - Na caixa **"Attach binaries by dropping them here or selecting them"**, arraste os seguintes arquivos da sua pasta `release/`:
+     - `yt-dlp GUI Setup 1.0.0.exe` (Instalador recomendado para a maioria dos usuários)
+     - `yt-dlp-GUI-Portable-1.0.0.exe` (Versão portátil sem instalação)
+     - `yt-dlp GUI Setup 1.0.0.exe.blockmap` (Opcional, usado caso utilize o sistema de auto-update diferencial)
+   - Adicione uma descrição com as novidades e clique em **"Publish release"**.
+
+---
+
+## ❓ Perguntas Frequentes (FAQ)
+
+### Qual a diferença entre o Setup e o Portable?
+- **Setup (`yt-dlp GUI Setup 1.0.0.exe`)**: É o instalador tradicional. Ele instala os arquivos em `%LOCALAPPDATA%\Programs\yt-dlp GUI`, cria atalhos na Área de Trabalho e no Menu Iniciar, e adiciona um desinstalador limpo no Windows. Recomendado para uso diário.
+- **Portable (`yt-dlp-GUI-Portable-1.0.0.exe`)**: É um executável único e independente. Não precisa instalar nada e não altera o Registro do Windows. Ideal para levar em um pen drive ou usar sem privilégios de instalação.
+
+### O executável portátil precisa ficar dentro da pasta `release`?
+**Não!** Você pode recortar ou copiar o `yt-dlp-GUI-Portable-1.0.0.exe` para qualquer lugar (sua Área de Trabalho, pasta Downloads, outro computador ou pen drive) e executá-lo diretamente com duplo clique.
+
+### O que é o arquivo `.blockmap`?
+O arquivo `.blockmap` (ex: `yt-dlp GUI Setup 1.0.0.exe.blockmap`) é gerado pelo `electron-builder` para suporte a **atualizações automáticas diferenciais** (delta updates). Ele mapeia o executável em pequenos blocos criptografados. Quando uma nova versão for lançada, o aplicativo baixa apenas as partes do arquivo que foram alteradas, em vez de baixar o instalador inteiro novamente.
+
+---
+
+## 🏗️ Estrutura do Monorepo
 
 ```
 yt-dlp-ui/
-├── ffmpeg.exe                  # Binário local de processamento multimídia
-├── ffprobe.exe                 # Binário local de análise de streams
-├── yt-dlp.exe                  # Binário local de download
-├── package.json                # Monorepo workspaces npm
-├── backend/
+├── ffmpeg.exe                  # Binário local do FFmpeg
+├── ffprobe.exe                 # Binário local do FFprobe
+├── yt-dlp.exe                  # Binário local do yt-dlp
+├── package.json                # Monorepo workspaces & scripts
+├── agents.md                   # Diretrizes para agentes de IA
+├── README.md                   # Este arquivo
+├── backend/                    # Orquestrador Express ESM (compartilhado Web e Desktop)
+│   └── src/
+│       ├── server.ts           # Servidor HTTP com export startServer()
+│       ├── services/           # Queue, Runner (spawn seguro), Parser e Dialog
+│       └── routes/             # Rotas REST (/api/downloads, /api/info, /api/system)
+├── frontend/                   # Interface React 19 + Tailwind CSS v4
+│   └── src/
+│       ├── App.tsx             # Orquestrador de estado e notificações
+│       └── components/         # Header, UrlHeroInput, OptionsPanel, DownloadItem, LogViewer
+├── desktop/                    # Processo Principal do Electron Windows
 │   ├── src/
-│   │   ├── config/paths.ts     # Detecção automática de executáveis e pastas
-│   │   ├── schemas/            # Validação tipada via Zod (CreateDownload, Config)
-│   │   ├── services/
-│   │   │   ├── runner.service.ts  # spawn() seguro sem shell + taskkill tree-kill
-│   │   │   ├── parser.service.ts  # Parser determinístico com template do yt-dlp
-│   │   │   ├── ytdlp.service.ts   # Consulta de metadados e montagem de args
-│   │   │   └── queue.service.ts   # Gerenciamento de fila em memória e SSE
-│   │   ├── routes/             # Rotas REST (/api/downloads, /api/info, /api/system)
-│   │   └── server.ts           # Servidor Express com suporte a servir a build estática
-└── frontend/
-    ├── src/
-    │   ├── components/         # Header, UrlHeroInput, OptionsPanel, DownloadItem, LogViewer
-    │   ├── hooks/              # useDownloadEvents (SSE nativo)
-    │   ├── types/              # Tipos TypeScript compartilhados
-    │   └── App.tsx
-    └── vite.config.ts
+│   │   ├── main.ts             # Janela anti-flash, Express embutido e ciclo de vida
+│   │   ├── preload.ts          # Bridge contextIsolation segura para notificações
+│   │   └── tray.ts             # Bandeja do sistema com menu toggle de minimizar
+│   ├── resources/icon.ico      # Ícone oficial do yt-dlp
+│   └── electron-builder.yml    # Configuração de empacotamento NSIS e Portable
+└── release/                    # Executáveis Windows finais gerados
+    ├── yt-dlp GUI Setup 1.0.0.exe
+    └── yt-dlp-GUI-Portable-1.0.0.exe
 ```

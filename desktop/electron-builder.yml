@@ -1,0 +1,47 @@
+appId: com.ytdlp.gui
+productName: "yt-dlp GUI"
+copyright: "Copyright © 2026"
+
+directories:
+  output: "../release"
+  buildResources: "resources"
+
+files:
+  - "dist/**/*"
+  - from: "../backend/dist"
+    to: "backend/dist"
+  - from: "../frontend/dist"
+    to: "frontend/dist"
+
+extraResources:
+  - from: "../yt-dlp.exe"
+    to: "yt-dlp.exe"
+  - from: "../ffmpeg.exe"
+    to: "ffmpeg.exe"
+  - from: "../ffprobe.exe"
+    to: "ffprobe.exe"
+  - from: "resources/icon.ico"
+    to: "icon.ico"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "yt-dlp GUI"
+  uninstallDisplayName: "yt-dlp GUI"
+
+portable:
+  artifactName: "yt-dlp-GUI-Portable-${version}.exe"
+
+npmRebuild: false

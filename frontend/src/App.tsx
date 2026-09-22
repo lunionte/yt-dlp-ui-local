@@ -38,6 +38,10 @@ export const App: React.FC = () => {
   const { jobs, connected, cancelJob, deleteJob } = useDownloadEvents();
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // ── Electron: rastrear IDs de downloads já notificados ──
+  const notifiedJobIdsRef = useRef<Set<string>>(new Set());
+  const initialLoadRef = useRef(true);
+
   // Busca status do sistema ao carregar
   const fetchSystemStatus = useCallback(async () => {
     try {
@@ -164,6 +168,32 @@ export const App: React.FC = () => {
   };
 
 
+  // ── Electron: notificação nativa quando um download é concluído ──
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+
+    if (initialLoadRef.current) {
+      // Primeira renderização: registra jobs já finalizados (sem notificar)
+      for (const job of jobs) {
+        if (job.status === 'completed' || job.status === 'error' || job.status === 'cancelled') {
+          notifiedJobIdsRef.current.add(job.id);
+        }
+      }
+      if (jobs.length > 0) initialLoadRef.current = false;
+      return;
+    }
+
+    if (!api?.isElectron) return;
+
+    for (const job of jobs) {
+      if (job.status === 'completed' && !notifiedJobIdsRef.current.has(job.id)) {
+        notifiedJobIdsRef.current.add(job.id);
+        api.showNotification('Download concluído', job.title || 'Download finalizado com sucesso');
+      }
+    }
+  }, [jobs]);
+
+
   const activeJobs = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing');
 
   return (
@@ -259,7 +289,12 @@ export const App: React.FC = () => {
 
       {/* Rodapé Minimalista */}
       <footer className="border-t border-slate-100 py-6 text-center text-xs text-slate-400">
-        <p>yt-dlp GUI • Orquestração local segura com Node.js, Express & FFmpeg</p>
+        <p>
+          yt-dlp GUI • Orquestração local segura com Node.js, Express &amp; FFmpeg
+          {(window as any).electronAPI?.isElectron && (
+            <span className="ml-1 text-slate-300">• Desktop</span>
+          )}
+        </p>
       </footer>
 
       {/* Modal de Configurações */}

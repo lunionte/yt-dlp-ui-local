@@ -2,6 +2,7 @@
   "name": "yt-dlp-ui-monorepo",
   "version": "1.0.0",
   "private": true,
+  "main": "desktop/dist/main.js",
   "workspaces": [
     "backend",
     "frontend"
@@ -9,8 +10,12 @@
   "scripts": {
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
-    "start": "node backend/dist/server.js"
+    "start": "node backend/dist/server.js",
+    "desktop:build": "npm run build && npx tsc -p desktop/tsconfig.json",
+    "desktop:dev": "npm run desktop:build && node desktop/node_modules/electron/cli.js .",
+    "desktop:dist": "npm run desktop:build && npm --prefix desktop run dist"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

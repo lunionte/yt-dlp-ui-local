@@ -6,6 +6,7 @@ const execFileAsync = promisify(execFile);
 let isDialogActive = false;
 /**
  * Abre o seletor nativo do sistema operacional (Windows, macOS ou Linux).
+ * No Electron, usa dialog.showOpenDialog() nativo (~0ms) em vez de PowerShell (~500ms+).
  */
 export async function selectPathViaDialog(options) {
     if (isDialogActive) {
@@ -20,8 +21,12 @@ export async function selectPathViaDialog(options) {
     const title = options.title || (isFolder ? 'Selecione a pasta' : 'Selecione o arquivo executável');
     const initialPath = options.defaultPath ? path.resolve(options.defaultPath) : '';
     const filter = options.filter || (isFolder ? '' : 'Executáveis (*.exe)|*.exe|Todos os arquivos (*.*)|*.*');
-    const platform = process.platform;
     try {
+        // Electron: usa diálogo nativo instantâneo (sem PowerShell, sem spawn)
+        if (process.env.ELECTRON) {
+            return await selectPathElectron({ isFolder, title, initialPath, filter });
+        }
+        const platform = process.platform;
         if (platform === 'win32') {
             return await selectPathWindows({ isFolder, title, initialPath, filter });
         }
@@ -43,6 +48,41 @@ export async function selectPathViaDialog(options) {
     finally {
         isDialogActive = false;
     }
+}
+/**
+ * Electron: Usa dialog.showOpenDialog() nativo via dynamic import.
+ * Instantâneo, sem spawn de processos, sem encoding issues.
+ */
+async function selectPathElectron(opts) {
+    // Dynamic import para evitar erro de compilação no backend standalone (sem electron types)
+    const electronModule = 'electron';
+    const { dialog, BrowserWindow } = await import(electronModule);
+    const parentWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || undefined;
+    // Converter filtro no formato PowerShell (Name (*.ext)|*.ext) para formato Electron
+    const filters = [];
+    if (!opts.isFolder && opts.filter) {
+        const parts = opts.filter.split('|');
+        for (let i = 0; i < parts.length - 1; i += 2) {
+            const name = parts[i].trim();
+            const pattern = parts[i + 1].trim();
+            const extensions = pattern.split(';').map((p) => p.replace('*.', '').trim()).filter(Boolean);
+            if (extensions.length > 0) {
+                filters.push({ name, extensions });
+            }
+        }
+    }
+    const result = await dialog.showOpenDialog(parentWindow, {
+        title: opts.title,
+        defaultPath: opts.initialPath || undefined,
+        properties: opts.isFolder
+            ? ['openDirectory', 'createDirectory']
+            : ['openFile'],
+        filters: filters.length > 0 ? filters : undefined,
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return { path: null, cancelled: true };
+    }
+    return { path: result.filePaths[0], cancelled: false };
 }
 /**
  * Windows: Executa PowerShell com System.Windows.Forms em modo STA otimizado
