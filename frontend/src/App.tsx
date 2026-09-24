@@ -205,20 +205,20 @@ export const App: React.FC = () => {
       />
 
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-        {/* Aviso se binários essenciais não forem encontrados */}
+        {/* Aviso se binários essenciais não puderem ser inicializados */}
         {systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) && (
           <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-amber-800">
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
               <span>
-                Algum dos executáveis (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não foi localizado automaticamente.
+                Uma das ferramentas integradas (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não pôde ser inicializada.
               </span>
             </div>
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition cursor-pointer"
             >
-              Configurar Caminhos
+              Ver Diagnóstico
             </button>
           </div>
         )}

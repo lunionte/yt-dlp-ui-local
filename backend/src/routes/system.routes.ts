@@ -17,9 +17,9 @@ router.get('/check', async (_req: Request, res: Response) => {
   res.json({
     config,
     tools: {
-      ytdlp,
-      ffmpeg,
-      ffprobe,
+      ytdlp: { ...ytdlp, embedded: true },
+      ffmpeg: { ...ffmpeg, embedded: true },
+      ffprobe: { ...ffprobe, embedded: true },
     },
   });
 });
