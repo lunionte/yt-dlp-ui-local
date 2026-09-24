@@ -59,12 +59,12 @@ export const Header: React.FC<HeaderProps> = ({
             {toolsOk ? (
               <>
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="hidden sm:inline">Binários Prontos</span>
+                <span className="hidden sm:inline">Ferramentas Prontas</span>
               </>
             ) : (
               <>
                 <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                <span className="hidden sm:inline">Verificar Binários</span>
+                <span className="hidden sm:inline">Verificar Ferramentas</span>
               </>
             )}
             <Settings className="w-3.5 h-3.5 text-slate-400 ml-0.5" />

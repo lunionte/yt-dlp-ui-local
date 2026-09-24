@@ -59,15 +59,16 @@ export interface VideoMetadata {
 
 export interface SystemStatus {
   config: {
-    ytdlpPath: string;
-    ffmpegPath: string;
-    ffprobePath: string;
+    ytdlpPath?: string;
+    ffmpegPath?: string;
+    ffprobePath?: string;
     defaultDownloadDir: string;
     maxConcurrentDownloads: number;
+    isEmbedded?: boolean;
   };
   tools: {
-    ytdlp: { available: boolean; version?: string; path: string; error?: string };
-    ffmpeg: { available: boolean; version?: string; path: string; error?: string };
-    ffprobe: { available: boolean; version?: string; path: string; error?: string };
+    ytdlp: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
+    ffmpeg: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
+    ffprobe: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
   };
 }
