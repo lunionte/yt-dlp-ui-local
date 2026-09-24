@@ -19,9 +19,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(2);
   const [saving, setSaving] = useState(false);
   const [isBrowsingFolder, setIsBrowsingFolder] = useState(false);
+  const [folderSelected, setFolderSelected] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const folderSelectedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (folderSelectedTimeoutRef.current) {
+        clearTimeout(folderSelectedTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (systemStatus) {
@@ -49,6 +59,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const data = await res.json();
         if (data.path) {
           setDefaultDownloadDir(data.path);
+          setFolderSelected(true);
+          if (folderSelectedTimeoutRef.current) {
+            clearTimeout(folderSelectedTimeoutRef.current);
+          }
+          folderSelectedTimeoutRef.current = setTimeout(() => {
+            setFolderSelected(false);
+          }, 2000);
         }
       }
     } catch (err) {
@@ -250,14 +267,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={handleBrowseFolder}
                   disabled={isBrowsingFolder}
                   title="Selecionar pasta no computador"
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+                  className={`flex items-center gap-1.5 px-3.5 py-2.5 border rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-75 ${
+                    folderSelected
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border-slate-200'
+                  }`}
                 >
-                  {isBrowsingFolder ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                  {folderSelected ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 animate-in fade-in zoom-in-75 duration-200" />
                   ) : (
                     <FolderOpen className="w-4 h-4 text-blue-600" />
                   )}
-                  <span className="hidden sm:inline">Procurar</span>
+                  <span className="hidden sm:inline">
+                    {folderSelected ? 'Selecionada' : 'Procurar'}
+                  </span>
                 </button>
                 <button
                   type="button"

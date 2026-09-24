@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Video,
   Music,
@@ -7,6 +7,7 @@ import {
   SlidersHorizontal,
   FolderOpen,
   ExternalLink,
+  CheckCircle2,
   Loader2,
 } from 'lucide-react';
 import {
@@ -37,6 +38,17 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
 }) => {
   const [isBrowsing, setIsBrowsing] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
+  const [folderSelected, setFolderSelected] = useState(false);
+  const folderSelectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (folderSelectedTimeoutRef.current) {
+        clearTimeout(folderSelectedTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const isVideo = options.mode === 'video';
 
   const update = <K extends keyof CreateDownloadPayload>(key: K, value: CreateDownloadPayload[K]) => {
@@ -64,6 +76,13 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
         const data = await res.json();
         if (data.path) {
           update('outputDir', data.path);
+          setFolderSelected(true);
+          if (folderSelectedTimeoutRef.current) {
+            clearTimeout(folderSelectedTimeoutRef.current);
+          }
+          folderSelectedTimeoutRef.current = setTimeout(() => {
+            setFolderSelected(false);
+          }, 2000);
         }
       }
     } catch (err) {
@@ -252,14 +271,20 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
               onClick={handleBrowseFolder}
               disabled={isBrowsing}
               title="Selecionar pasta no computador"
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-50"
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 border rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 disabled:opacity-75 ${
+                folderSelected
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border-slate-200'
+              }`}
             >
-              {isBrowsing ? (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              {folderSelected ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 animate-in fade-in zoom-in-75 duration-200" />
               ) : (
                 <FolderOpen className="w-4 h-4 text-blue-600" />
               )}
-              <span className="hidden sm:inline">Procurar</span>
+              <span className="hidden sm:inline">
+                {folderSelected ? 'Selecionada' : 'Procurar'}
+              </span>
             </button>
             <button
               type="button"
