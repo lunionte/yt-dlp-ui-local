@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Music, Clipboard, Sparkles, Loader2, X, Clock, User } from 'lucide-react';
+import { Music, Clipboard, Search, Loader2, X, Clock, User } from 'lucide-react';
 import { VideoMetadata } from '../types/download.js';
 import { normalizeMediaUrl, isLikelyMediaUrl } from '../utils/url.js';
 
@@ -102,30 +102,32 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   };
 
   return (
-    <div className="w-full bg-white border border-slate-200/70 rounded-3xl p-8 sm:p-12 shadow-sm text-center relative overflow-hidden transition-all duration-300">
-      {/* Ícone Central Estilo Pillowcase */}
-      <div className="mx-auto w-20 h-20 rounded-2xl bg-blue-50/70 flex items-center justify-center text-blue-600 mb-6 group transition hover:scale-105">
-        <Music className="w-10 h-10 stroke-[2] text-blue-600" />
+    <div className="w-full glass-card glass-specular rounded-3xl p-8 sm:p-12 text-center relative overflow-hidden transition-all duration-300">
+
+      {/* Tile 3D de Vidro Líquido — Ícone Central */}
+      <div className="mx-auto w-20 h-20 rounded-2xl glass-tile-3d flex items-center justify-center mb-8 transition-transform duration-300 hover:scale-105">
+        <Music className="w-9 h-9 text-blue-500/80 relative z-10" strokeWidth={1.5} />
       </div>
 
-      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-2">
+      {/* Título Editorial */}
+      <h1 className="font-editorial text-3xl sm:text-4xl tracking-tight text-slate-800 mb-2.5">
         insira o link aqui ou{' '}
         <button
           type="button"
           onClick={handlePasteClick}
-          className="text-blue-600 hover:text-blue-700 underline underline-offset-4 cursor-pointer font-bold"
+          className="font-editorial italic text-blue-600 hover:text-blue-700 underline underline-offset-4 decoration-blue-300 cursor-pointer transition-colors"
         >
           cole
         </button>
       </h1>
 
-      <p className="text-xs sm:text-sm text-slate-400 font-normal mb-8 max-w-lg mx-auto">
+      <p className="text-xs sm:text-sm text-slate-600 font-medium mb-8 max-w-lg mx-auto tracking-wide">
         YouTube, Instagram, TikTok, SoundCloud, Bandcamp, Twitter/X e +1.000 sites
       </p>
 
-      {/* Formulário de Entrada da URL */}
+      {/* Formulário de Entrada da URL — Cápsula de Vidro */}
       <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
-        <div className="relative flex items-center shadow-xs rounded-2xl border border-slate-200 bg-white hover:border-slate-300 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100 transition">
+        <div className="relative flex items-center glass-input rounded-2xl transition-all">
           <input
             type="text"
             inputMode="url"
@@ -133,7 +135,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             onChange={(e) => onChangeUrl(e.target.value)}
             onPaste={handleInputPaste}
             placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)"
-            className="w-full py-4 pl-5 pr-28 text-slate-800 placeholder:text-slate-400 text-sm sm:text-base bg-transparent rounded-2xl outline-none"
+            className="font-mono w-full py-4 pl-5 pr-32 text-slate-800 placeholder:text-slate-500 text-sm bg-transparent rounded-2xl outline-none tracking-tight font-medium"
             autoComplete="off"
             autoCorrect="off"
             spellCheck="false"
@@ -145,10 +147,10 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer"
+                className="p-2 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
                 title="Limpar campo"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" strokeWidth={1.5} />
               </button>
             )}
 
@@ -156,9 +158,9 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handlePasteClick}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition cursor-pointer"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-600 glass-pill rounded-xl transition cursor-pointer"
               >
-                <Clipboard className="w-3.5 h-3.5" />
+                <Clipboard className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span className="hidden sm:inline">Colar</span>
               </button>
             )}
@@ -166,16 +168,16 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             <button
               type="submit"
               disabled={isLoading || !url.trim()}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-xs cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-2.5 liquid-button text-xs sm:text-sm font-bold rounded-xl cursor-pointer disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.5} />
                   <span className="hidden sm:inline">Analisando...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
+                  <Search className="w-4 h-4" strokeWidth={1.5} />
                   <span>Analisar</span>
                 </>
               )}
@@ -184,44 +186,44 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
         </div>
 
         {pasteError && (
-          <p className="text-xs text-red-500 mt-2 text-left px-2">{pasteError}</p>
+          <p className="text-xs text-red-500 mt-2 text-left px-2 font-medium">{pasteError}</p>
         )}
       </form>
 
-      {/* Cartão de Prévia do Vídeo Encontrado */}
+      {/* Cartão de Prévia do Vídeo — Vidro Fosco */}
       {metadata && (
-        <div className="max-w-2xl mx-auto mt-6 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 text-left flex flex-col sm:flex-row gap-4 items-start sm:items-center transition animate-in fade-in duration-200">
+        <div className="max-w-2xl mx-auto mt-6 glass-pill rounded-2xl p-4 text-left flex flex-col sm:flex-row gap-4 items-start sm:items-center transition-all duration-200">
           {metadata.thumbnail ? (
             <img
               src={metadata.thumbnail}
               alt={metadata.title}
-              className="w-full sm:w-28 h-20 object-cover rounded-xl border border-slate-200 bg-slate-100 shrink-0"
+              className="w-full sm:w-28 h-20 object-cover rounded-xl border border-white/60 bg-slate-100/50 shrink-0"
             />
           ) : (
-            <div className="w-full sm:w-28 h-20 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-              <Music className="w-8 h-8" />
+            <div className="w-full sm:w-28 h-20 rounded-xl glass-card flex items-center justify-center text-slate-400 shrink-0">
+              <Music className="w-8 h-8" strokeWidth={1.5} />
             </div>
           )}
 
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 text-sm line-clamp-2 leading-snug">
+            <h3 className="font-bold text-slate-900 text-sm line-clamp-2 leading-snug">
               {metadata.title}
             </h3>
-            <div className="flex items-center gap-3 text-xs text-slate-500 mt-2">
+            <div className="flex items-center gap-3 text-xs text-slate-600 mt-2">
               {metadata.uploader && (
                 <span className="flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="truncate max-w-[140px]">{metadata.uploader}</span>
+                  <User className="w-3.5 h-3.5 text-slate-500" strokeWidth={1.5} />
+                  <span className="truncate max-w-[140px] font-medium text-slate-700">{metadata.uploader}</span>
                 </span>
               )}
               {metadata.durationString && (
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span className="flex items-center gap-1 font-mono text-[11px] font-medium text-slate-700">
+                  <Clock className="w-3.5 h-3.5 text-slate-500" strokeWidth={1.5} />
                   {metadata.durationString}
                 </span>
               )}
               {metadata.availableResolutions.length > 0 && (
-                <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-medium text-[11px]">
+                <span className="font-mono px-2 py-0.5 rounded-md glass-segment-active text-blue-700 font-bold text-[11px]">
                   até {metadata.availableResolutions[0]}
                 </span>
               )}

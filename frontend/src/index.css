@@ -1,26 +1,316 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════
+   LIQUID GLASS DESIGN SYSTEM
+   Tipografia, superfícies e utilitários de vidro
+   ═══════════════════════════════════════════════ */
+
 @layer base {
   body {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   }
 }
 
-/* Custom scrollbar para visual limpo */
+/* ── Tipografia Híbrida ── */
+
+.font-editorial {
+  font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ── Superfícies de Vidro Líquido ── */
+
+.glass-card {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 8px 32px 0 rgba(31, 38, 135, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.glass-card-strong {
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 8px 32px 0 rgba(31, 38, 135, 0.08),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.95);
+}
+
+.glass-dark {
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px 0 rgba(0, 0, 0, 0.2),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ── Reflexo Especular (brilho superior de vidro) ── */
+
+.glass-specular {
+  position: relative;
+}
+
+.glass-specular::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Cápsulas de Vidro (pills, badges) ── */
+
+.glass-pill {
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 2px 8px 0 rgba(31, 38, 135, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.2s ease;
+}
+
+.glass-pill:hover {
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 4px 12px 0 rgba(31, 38, 135, 0.08),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* ── Botão Primário Liquid Glass ── */
+
+.liquid-button {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 4px 16px 0 rgba(37, 99, 235, 0.3),
+    0 1px 3px 0 rgba(37, 99, 235, 0.2),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.liquid-button:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%);
+  box-shadow:
+    0 6px 24px 0 rgba(37, 99, 235, 0.4),
+    0 2px 4px 0 rgba(37, 99, 235, 0.25),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.liquid-button:active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 8px 0 rgba(37, 99, 235, 0.3),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.liquid-button:disabled {
+  background: rgba(148, 163, 184, 0.4);
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: none;
+  transform: none;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+/* ── Input de Vidro ── */
+
+.glass-input {
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 2px 8px 0 rgba(31, 38, 135, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
+}
+
+.glass-input:hover {
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.glass-input:focus-within {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow:
+    0 0 0 3px rgba(59, 130, 246, 0.1),
+    0 2px 8px 0 rgba(31, 38, 135, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* ── Select de Vidro ── */
+
+.glass-select {
+  backdrop-filter: blur(8px) saturate(160%);
+  -webkit-backdrop-filter: blur(8px) saturate(160%);
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.6);
+  transition: all 0.2s ease;
+}
+
+.glass-select:hover {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.glass-select:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow:
+    0 0 0 3px rgba(59, 130, 246, 0.1),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.7);
+  outline: none;
+}
+
+/* ── Segmented Control (Vídeo / Áudio) ── */
+
+.glass-segment {
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
+}
+
+.glass-segment-active {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 2px 8px 0 rgba(31, 38, 135, 0.06),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* ── Shimmer de Progresso ── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.7) 0%,
+    rgba(96, 165, 250, 0.9) 40%,
+    rgba(147, 197, 253, 1) 50%,
+    rgba(96, 165, 250, 0.9) 60%,
+    rgba(59, 130, 246, 0.7) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ── Tile 3D de Vidro Líquido (Hero) ── */
+
+.glass-tile-3d {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(241, 245, 249, 0.6) 30%,
+    rgba(226, 232, 240, 0.4) 60%,
+    rgba(255, 255, 255, 0.7) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 8px 32px rgba(31, 38, 135, 0.1),
+    0 2px 8px rgba(31, 38, 135, 0.06),
+    inset 0 2px 4px rgba(255, 255, 255, 1),
+    inset 0 -1px 2px rgba(148, 163, 184, 0.15);
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-tile-3d::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    ellipse at 30% 20%,
+    rgba(255, 255, 255, 0.6) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+}
+
+.glass-tile-3d::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.5) 0%,
+    transparent 100%
+  );
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ── Fundo Líquido Fixo ── */
+
+.liquid-bg {
+  background-image: url('/assets/liquid-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* ── Overlay com Iluminação Ambiente ── */
+
+.liquid-overlay {
+  background:
+    radial-gradient(ellipse at 20% 20%, rgba(219, 234, 254, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(224, 231, 255, 0.1) 0%, transparent 50%),
+    rgba(248, 250, 252, 0.25);
+}
+
+/* ── Custom scrollbar estilizado ── */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f8fafc;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgba(148, 163, 184, 0.4);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(100, 116, 139, 0.5);
 }

@@ -196,99 +196,120 @@ export const App: React.FC = () => {
 
   const activeJobs = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing');
 
+  // Determina se deve usar layout split (quando há conteúdo na coluna direita)
+  const hasContent = url || metadata || jobs.length > 0;
+  const showSplit = hasContent && jobs.length > 0;
+
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col">
-      <Header
-        systemStatus={systemStatus}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        sseConnected={connected}
-      />
+    <div className="min-h-screen liquid-bg flex flex-col">
+      {/* Overlay de iluminação ambiente */}
+      <div className="fixed inset-0 liquid-overlay pointer-events-none z-0" />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-        {/* Aviso se binários essenciais não puderem ser inicializados */}
-        {systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) && (
-          <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-amber-800">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-              <span>
-                Uma das ferramentas integradas (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não pôde ser inicializada.
-              </span>
-            </div>
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition cursor-pointer"
-            >
-              Ver Diagnóstico
-            </button>
-          </div>
-        )}
-
-        {/* Hero Card Estilo Pillowcase */}
-        <UrlHeroInput
-          url={url}
-          onChangeUrl={(val) => {
-            setUrl(val);
-            setDownloadOptions((prev) => ({ ...prev, url: val }));
-          }}
-          onFetchMetadata={handleFetchMetadata}
-          isLoading={isLoadingMetadata}
-          metadata={metadata}
-          onClearMetadata={handleClearMetadata}
+      {/* Header flutuante de vidro */}
+      <div className="relative z-20">
+        <Header
+          systemStatus={systemStatus}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          sseConnected={connected}
         />
+      </div>
 
+      <main className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
 
-        {actionError && (
-          <div className="bg-rose-50 border border-rose-200/80 text-rose-700 text-xs sm:text-sm rounded-2xl p-4 text-center">
-            {actionError}
-          </div>
-        )}
+        {/* Layout dinâmico: centralizado → split-screen */}
+        <div className={`transition-all duration-500 ease-out ${
+          showSplit
+            ? 'grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start'
+            : 'max-w-4xl mx-auto space-y-6'
+        }`}>
 
-        {/* Painel de Opções (exibido quando há URL ou metadados) */}
-        {(url || metadata) && (
-          <OptionsPanel
-            options={{ ...downloadOptions, url: url || downloadOptions.url }}
-            onChangeOptions={setDownloadOptions}
-            metadata={metadata}
-            defaultFolder={systemStatus?.config.defaultDownloadDir || 'Downloads'}
-            onStartDownload={handleStartDownload}
-            isStarting={isStartingDownload}
-          />
-        )}
-
-        {/* Seção de Downloads Ativos e Histórico */}
-        {jobs.length > 0 && (
-          <div className="space-y-4 pt-4">
-            <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
-              <div className="flex items-center gap-2">
-                <ListFilter className="w-4 h-4 text-slate-500" />
-                <h2 className="text-sm font-bold text-slate-800 tracking-tight">
-                  Downloads ({jobs.length})
-                </h2>
+          {/* ══ Coluna Esquerda: Input + Opções ══ */}
+          <div className={`space-y-6 ${showSplit ? 'lg:col-span-7' : ''}`}>
+            {/* Aviso se binários essenciais não puderem ser inicializados */}
+            {systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) && (
+              <div className="glass-pill !bg-amber-50/50 !border-amber-200/50 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-amber-700">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" strokeWidth={1.5} />
+                  <span>
+                    Uma das ferramentas integradas (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não pôde ser inicializada.
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="px-3 py-1.5 liquid-button text-xs font-semibold rounded-lg cursor-pointer shrink-0"
+                >
+                  Ver Diagnóstico
+                </button>
               </div>
-              {activeJobs.length > 0 && (
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
-                  {activeJobs.length} em andamento
-                </span>
-              )}
-            </div>
+            )}
 
-            {/* Lista de Downloads */}
-            <div className="space-y-3.5">
-              {jobs.map((job) => (
-                <DownloadItem
-                  key={job.id}
-                  job={job}
-                  onCancel={cancelJob}
-                  onDelete={deleteJob}
-                />
-              ))}
-            </div>
+            {/* Hero Card de Vidro Líquido */}
+            <UrlHeroInput
+              url={url}
+              onChangeUrl={(val) => {
+                setUrl(val);
+                setDownloadOptions((prev) => ({ ...prev, url: val }));
+              }}
+              onFetchMetadata={handleFetchMetadata}
+              isLoading={isLoadingMetadata}
+              metadata={metadata}
+              onClearMetadata={handleClearMetadata}
+            />
+
+            {actionError && (
+              <div className="glass-pill !bg-rose-50/50 !border-rose-200/50 text-rose-600 text-xs sm:text-sm rounded-2xl p-4 text-center">
+                {actionError}
+              </div>
+            )}
+
+            {/* Painel de Opções (exibido quando há URL ou metadados) */}
+            {(url || metadata) && (
+              <OptionsPanel
+                options={{ ...downloadOptions, url: url || downloadOptions.url }}
+                onChangeOptions={setDownloadOptions}
+                metadata={metadata}
+                defaultFolder={systemStatus?.config.defaultDownloadDir || 'Downloads'}
+                onStartDownload={handleStartDownload}
+                isStarting={isStartingDownload}
+              />
+            )}
           </div>
-        )}
+
+          {/* ══ Coluna Direita: Fila de Downloads e Histórico ══ */}
+          {jobs.length > 0 && (
+            <div className={`space-y-4 ${showSplit ? 'lg:col-span-5' : ''}`}>
+              <div className="flex items-center justify-between pb-3 border-b border-white/30">
+                <div className="flex items-center gap-2">
+                  <ListFilter className="w-4 h-4 text-slate-500" strokeWidth={1.5} />
+                  <h2 className="text-sm font-bold text-slate-700 tracking-tight">
+                    Downloads ({jobs.length})
+                  </h2>
+                </div>
+                {activeJobs.length > 0 && (
+                  <span className="font-mono text-xs px-2.5 py-0.5 rounded-full glass-segment-active text-blue-600 font-semibold">
+                    {activeJobs.length} em andamento
+                  </span>
+                )}
+              </div>
+
+              {/* Lista de Downloads */}
+              <div className="space-y-3.5">
+                {jobs.map((job) => (
+                  <DownloadItem
+                    key={job.id}
+                    job={job}
+                    onCancel={cancelJob}
+                    onDelete={deleteJob}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Rodapé Minimalista */}
-      <footer className="border-t border-slate-100 py-6 text-center text-xs text-slate-400">
+      <footer className="relative z-10 border-t border-white/20 py-6 text-center text-xs text-slate-400">
         <p>
           yt-dlp GUI • Orquestração local segura com Node.js, Express &amp; FFmpeg
           {(window as any).electronAPI?.isElectron && (

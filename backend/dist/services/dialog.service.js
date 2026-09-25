@@ -22,9 +22,14 @@ export async function selectPathViaDialog(options) {
     const initialPath = options.defaultPath ? path.resolve(options.defaultPath) : '';
     const filter = options.filter || (isFolder ? '' : 'Executáveis (*.exe)|*.exe|Todos os arquivos (*.*)|*.*');
     try {
-        // Electron: usa diálogo nativo instantâneo (sem PowerShell, sem spawn)
+        // Electron: usa diálogo nativo se disponível no ambiente
         if (process.env.ELECTRON) {
-            return await selectPathElectron({ isFolder, title, initialPath, filter });
+            try {
+                return await selectPathElectron({ isFolder, title, initialPath, filter });
+            }
+            catch (e) {
+                console.warn('[Dialog] Falha ao importar electron nativo, usando fallback do SO:', e);
+            }
         }
         const platform = process.platform;
         if (platform === 'win32') {
@@ -107,6 +112,7 @@ $initPath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64S
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = $title
 $dialog.ShowNewFolderButton = $true
+$dialog.AutoUpgradeEnabled = $true
 
 if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
     $dialog.SelectedPath = $initPath
@@ -142,6 +148,7 @@ $filter = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64Str
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
 $dialog.Title = $title
 $dialog.Filter = $filter
+$dialog.AutoUpgradeEnabled = $true
 
 if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
     if (Test-Path -LiteralPath $initPath -PathType Container) {
@@ -167,7 +174,7 @@ $dialog.Dispose()
 [System.Environment]::Exit(0)
 `.trim();
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-NoLogo', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NoLogo', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
         timeout: 120000,
     });
     const selected = stdout.trim();

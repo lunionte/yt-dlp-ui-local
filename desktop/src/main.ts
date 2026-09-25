@@ -12,8 +12,9 @@
  * - Graceful shutdown do Express e cleanup do tray
  */
 
-import { app, BrowserWindow, ipcMain, nativeImage, Notification } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, shell } from 'electron';
 import path from 'node:path';
+import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { createTray, destroyTray, getMinimizeToTray } from './tray.js';
 
@@ -21,6 +22,26 @@ import fs from 'node:fs';
 
 // ─── Constants & Paths ──────────────────────────────────────────────
 const IS_DEV = !app.isPackaged;
+
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => {
+      tester.close(() => resolve(true));
+    });
+    tester.listen(port, '127.0.0.1');
+  });
+}
+
+async function getAvailablePort(desiredPort: number): Promise<number> {
+  for (let p = desiredPort; p < desiredPort + 50; p++) {
+    if (await isPortFree(p)) {
+      return p;
+    }
+  }
+  return 0;
+}
 
 function resolveAppRoot(): string {
   if (app.isPackaged) {
@@ -41,12 +62,11 @@ function resolveAppRoot(): string {
 }
 
 const APP_ROOT = resolveAppRoot();
-const PORT = 3001;
+let activePort = 3001;
 
 // ─── Environment (ANTES de qualquer import do backend) ──────────────
 process.env.ELECTRON = '1';
 process.env.APP_ROOT = APP_ROOT;
-process.env.PORT = String(PORT);
 
 // Em modo empacotado, config.json vai para a pasta de dados do usuário
 if (app.isPackaged) {
@@ -134,7 +154,7 @@ function createWindow(): BrowserWindow {
   });
 
   // ── Carregar a aplicação ──
-  window.loadURL(`http://localhost:${PORT}`);
+  window.loadURL(`http://localhost:${activePort}`);
 
   return window;
 }
@@ -149,17 +169,55 @@ function setupIPC(): void {
       new Notification({ title, body, icon: getAppIcon() }).show();
     }
   });
+
+  ipcMain.handle('select-folder', async (_event, defaultPath?: string) => {
+    const parentWindow = win || BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+    if (!parentWindow) return { path: null, cancelled: true };
+
+    const result = await dialog.showOpenDialog(parentWindow, {
+      title: 'Selecione a pasta de download',
+      defaultPath: defaultPath || undefined,
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { path: null, cancelled: true };
+    }
+    return { path: result.filePaths[0], cancelled: false };
+  });
+
+  ipcMain.handle('open-folder', async (_event, folderPath: string) => {
+    try {
+      const target = path.resolve(folderPath);
+      if (!fs.existsSync(target)) {
+        fs.mkdirSync(target, { recursive: true });
+      }
+      const errMsg = await shell.openPath(target);
+      if (errMsg) {
+        console.error('[Electron] Erro ao abrir pasta:', errMsg);
+        return { success: false, error: errMsg };
+      }
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Electron] Falha ao abrir pasta:', err);
+      return { success: false, error: err.message };
+    }
+  });
 }
 
 // ─── Backend Startup ────────────────────────────────────────────────
 async function startBackend(): Promise<void> {
+  const freePort = await getAvailablePort(3001);
+  activePort = freePort;
+  process.env.PORT = String(freePort);
+
   const serverPath = path.join(APP_ROOT, 'backend', 'dist', 'server.js');
   const serverUrl = pathToFileURL(serverPath).href;
 
   const serverModule = await import(serverUrl);
 
   if (typeof serverModule.startServer === 'function') {
-    serverHandle = serverModule.startServer(PORT);
+    serverHandle = serverModule.startServer(activePort);
   }
 }
 

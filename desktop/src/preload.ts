@@ -17,4 +17,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Dispara uma notificação nativa do Windows */
   showNotification: (title: string, body: string): Promise<void> =>
     ipcRenderer.invoke('show-notification', title, body),
+
+  /** Abre o diálogo nativo do Electron para selecionar uma pasta */
+  selectFolder: (defaultPath?: string): Promise<{ path: string | null; cancelled: boolean }> =>
+    ipcRenderer.invoke('select-folder', defaultPath),
+
+  /** Abre a pasta no explorador nativo do sistema operacional */
+  openFolder: (folderPath: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('open-folder', folderPath),
 });
