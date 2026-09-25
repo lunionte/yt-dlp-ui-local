@@ -69,6 +69,6 @@ export interface SystemStatus {
   tools: {
     ytdlp: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
     ffmpeg: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
-    ffprobe: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean };
+    ffprobe: { available: boolean; version?: string; path: string; error?: string; embedded?: boolean; optional?: boolean };
   };
 }

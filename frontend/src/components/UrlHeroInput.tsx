@@ -7,6 +7,7 @@ interface UrlHeroInputProps {
   url: string;
   onChangeUrl: (url: string) => void;
   onFetchMetadata: (url: string) => Promise<void>;
+  onCancelMetadata: () => void;
   isLoading: boolean;
   metadata: VideoMetadata | null;
   onClearMetadata: () => void;
@@ -16,6 +17,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   url,
   onChangeUrl,
   onFetchMetadata,
+  onCancelMetadata,
   isLoading,
   metadata,
   onClearMetadata,
@@ -55,6 +57,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   const triggerImmediateFetch = (rawText: string) => {
     const trimmed = rawText.trim();
     if (!trimmed) return;
+    onCancelMetadata();
     onChangeUrl(trimmed);
 
     if (isLikelyMediaUrl(trimmed)) {
@@ -62,6 +65,14 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
       lastFetchedUrlRef.current = normalized;
       onFetchMetadata(normalized);
     }
+  };
+
+  const handleUrlChange = (nextUrl: string) => {
+    if (nextUrl !== url) {
+      lastFetchedUrlRef.current = '';
+      onCancelMetadata();
+    }
+    onChangeUrl(nextUrl);
   };
 
   const handlePasteClick = async () => {
@@ -97,6 +108,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
 
   const handleClear = () => {
     lastFetchedUrlRef.current = '';
+    onCancelMetadata();
     onChangeUrl('');
     onClearMetadata();
   };
@@ -132,7 +144,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             type="text"
             inputMode="url"
             value={url}
-            onChange={(e) => onChangeUrl(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
             onPaste={handleInputPaste}
             placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)"
             className="font-mono w-full py-4 pl-5 pr-32 text-slate-800 placeholder:text-slate-500 text-sm bg-transparent rounded-2xl outline-none tracking-tight font-medium"

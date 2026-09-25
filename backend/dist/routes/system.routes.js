@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import fs from 'node:fs';
 import { loadConfig, saveConfig, checkToolVersion } from '../config/paths.js';
 import { UpdateConfigSchema } from '../schemas/download.schema.js';
 import { selectPathViaDialog, openFolderInExplorer } from '../services/dialog.service.js';
@@ -15,7 +16,11 @@ router.get('/check', async (_req, res) => {
         tools: {
             ytdlp: { ...ytdlp, embedded: true },
             ffmpeg: { ...ffmpeg, embedded: true },
-            ffprobe: { ...ffprobe, embedded: true },
+            ffprobe: {
+                ...ffprobe,
+                embedded: fs.existsSync(config.ffprobePath),
+                optional: true,
+            },
         },
     });
 });

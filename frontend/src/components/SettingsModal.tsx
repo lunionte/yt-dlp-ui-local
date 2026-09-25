@@ -195,7 +195,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 leading-relaxed">
-              O <strong>yt-dlp</strong>, <strong>FFmpeg</strong> e <strong>FFprobe</strong> já vêm embutidos nativamente nesta aplicação. Não é necessário instalar ou configurar caminhos na sua máquina.
+              O <strong>yt-dlp</strong> e o <strong>FFmpeg</strong> vêm embutidos. O <strong>FFprobe</strong> é opcional e serve apenas para diagnóstico; se estiver no PATH, será detectado automaticamente.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
@@ -252,19 +252,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {systemStatus?.tools.ffprobe.available ? (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50">
                       <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
-                      OK
+                      {systemStatus.tools.ffprobe.embedded ? 'OK' : 'PATH'}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-rose-50/50 text-rose-600 !border-rose-200/50">
-                      <AlertCircle className="w-3 h-3" strokeWidth={1.5} />
-                      Erro
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill text-slate-500">
+                      Opcional
                     </span>
                   )}
                 </div>
                 <div className="text-[11px] text-slate-500 font-mono truncate">
                   {systemStatus?.tools.ffprobe.available
-                    ? 'Inspetor Ativo'
-                    : 'Falha ao iniciar'}
+                    ? (systemStatus.tools.ffprobe.embedded ? 'Inspetor Ativo' : 'Encontrado no PATH')
+                    : 'Não incluído no Desktop'}
                 </div>
               </div>
             </div>

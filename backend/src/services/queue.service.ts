@@ -15,6 +15,7 @@ export interface SSEEventData {
 class QueueService extends EventEmitter {
   private jobs: Map<string, DownloadJob> = new Map();
   private activeHandles: Map<string, RunningProcessHandle> = new Map();
+  private metadataControllers: Map<string, AbortController> = new Map();
 
   constructor() {
     super();
@@ -32,6 +33,7 @@ class QueueService extends EventEmitter {
     const job = this.jobs.get(id);
     if (!job) return false;
 
+    this.cancelMetadataFetch(id);
     if (job.status === 'downloading' || job.status === 'processing') {
       this.cancelJob(id);
     }
@@ -79,7 +81,9 @@ class QueueService extends EventEmitter {
 
     // Tenta obter metadados em background se não tiver título prévio
     if (!initialTitle) {
-      fetchVideoInfo(options.url)
+      const controller = new AbortController();
+      this.metadataControllers.set(id, controller);
+      fetchVideoInfo(options.url, controller.signal)
         .then((meta) => {
           if (this.jobs.has(id)) {
             const current = this.jobs.get(id)!;
@@ -95,6 +99,11 @@ class QueueService extends EventEmitter {
         })
         .catch(() => {
           // Mantém o título padrão se a prévia falhar
+        })
+        .finally(() => {
+          if (this.metadataControllers.get(id) === controller) {
+            this.metadataControllers.delete(id);
+          }
         });
     }
 
@@ -105,6 +114,8 @@ class QueueService extends EventEmitter {
   public async cancelJob(id: string): Promise<boolean> {
     const job = this.jobs.get(id);
     if (!job) return false;
+
+    this.cancelMetadataFetch(id);
 
     if (job.status === 'queued') {
       job.status = 'cancelled';
@@ -142,6 +153,14 @@ class QueueService extends EventEmitter {
 
   private emitEvent(event: SSEEventData) {
     this.emit('event', event);
+  }
+
+  private cancelMetadataFetch(id: string): void {
+    const controller = this.metadataControllers.get(id);
+    if (controller) {
+      controller.abort();
+      this.metadataControllers.delete(id);
+    }
   }
 
   private processQueue() {

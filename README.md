@@ -8,7 +8,7 @@ Inspirada no design minimalista do **Pillowcase** (tema claro com fundo suave, c
 
 ## 💻 Aplicativo Desktop para Windows
 
-O projeto já inclui executáveis prontos para Windows de 64 bits com **yt-dlp e FFmpeg embutidos** (não é necessário instalar nada externamente).
+O projeto já inclui executáveis prontos para Windows de 64 bits com **yt-dlp e FFmpeg embutidos** (não é necessário instalar nada externamente). O FFprobe é opcional no Desktop e é usado apenas no diagnóstico; se estiver disponível no PATH, o aplicativo o detecta.
 
 Os executáveis gerados ficam na pasta [`release/`](release/):
 
@@ -57,12 +57,12 @@ npm run dev
 
 ## 🛠️ Ferramentas Externas Embutidas
 
-Tanto a versão Desktop quanto a versão Web utilizam as versões oficiais mais recentes:
+O modo Web local utiliza os binários colocados na raiz do projeto:
 - `yt-dlp.exe`: Motor de download e extração de metadados
 - `ffmpeg.exe`: Processamento, muxing e extração de áudio
-- `ffprobe.exe`: Inspeção de codecs e streams
+- `ffprobe.exe`: ferramenta opcional de diagnóstico (não empacotada no Desktop)
 
-> **No Desktop (.exe)**: Os binários já vêm empacotados dentro do executável.  
+> **No Desktop (.exe)**: yt-dlp e FFmpeg vêm empacotados dentro do executável; FFprobe é opcional e pode ser detectado pelo PATH.
 > **No modo Web local**: Os binários colocados na raiz do projeto são detectados e priorizados automaticamente.
 
 ---

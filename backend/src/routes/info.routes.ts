@@ -17,10 +17,17 @@ router.post('/', async (req: Request, res: Response) => {
     return;
   }
 
+  const controller = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
   try {
-    const info = await fetchVideoInfo(result.data.url);
+    const info = await fetchVideoInfo(result.data.url, controller.signal);
+    if (res.destroyed) return;
     res.json(info);
   } catch (err: any) {
+    if (controller.signal.aborted || res.destroyed) return;
     res.status(500).json({ error: err.message || 'Erro ao obter informações do vídeo' });
   }
 });

@@ -37,6 +37,7 @@ export const App: React.FC = () => {
 
   const { jobs, connected, cancelJob, deleteJob } = useDownloadEvents();
   const abortControllerRef = useRef<AbortController | null>(null);
+  const metadataRequestIdRef = useRef(0);
 
   // ── Electron: rastrear IDs de downloads já notificados ──
   const notifiedJobIdsRef = useRef<Set<string>>(new Set());
@@ -74,6 +75,7 @@ export const App: React.FC = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    const requestId = ++metadataRequestIdRef.current;
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -94,6 +96,7 @@ export const App: React.FC = () => {
       }
 
       const data: VideoMetadata = await res.json();
+      if (metadataRequestIdRef.current !== requestId) return;
       setMetadata(data);
       setDownloadOptions((prev) => ({
         ...prev,
@@ -101,7 +104,7 @@ export const App: React.FC = () => {
         videoResolution: data.availableResolutions[0] ? (data.availableResolutions[0] as any) : '1080p',
       }));
     } catch (err: any) {
-      if (err.name === 'AbortError') {
+      if (err.name === 'AbortError' || metadataRequestIdRef.current !== requestId) {
         return; // Requisição cancelada intencionalmente por uma nova
       }
       setActionError(err.message || 'Erro ao conectar ou ler URL');
@@ -114,7 +117,8 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleClearMetadata = useCallback(() => {
+  const handleCancelMetadata = useCallback(() => {
+    metadataRequestIdRef.current += 1;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -122,6 +126,10 @@ export const App: React.FC = () => {
     setIsLoadingMetadata(false);
     setMetadata(null);
   }, []);
+
+  const handleClearMetadata = useCallback(() => {
+    handleCancelMetadata();
+  }, [handleCancelMetadata]);
 
   // Inicia o download
   const handleStartDownload = async () => {
@@ -144,7 +152,7 @@ export const App: React.FC = () => {
       const res = await fetch('/api/downloads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, title: metadata?.title }),
       });
 
       if (!res.ok) {
@@ -153,6 +161,7 @@ export const App: React.FC = () => {
       }
 
       // Limpa os campos após enfileirar
+      handleCancelMetadata();
       setUrl('');
       setMetadata(null);
       setDownloadOptions((prev) => ({
@@ -251,6 +260,7 @@ export const App: React.FC = () => {
                 setDownloadOptions((prev) => ({ ...prev, url: val }));
               }}
               onFetchMetadata={handleFetchMetadata}
+              onCancelMetadata={handleCancelMetadata}
               isLoading={isLoadingMetadata}
               metadata={metadata}
               onClearMetadata={handleClearMetadata}
