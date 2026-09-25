@@ -43,7 +43,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
           <div className="flex items-center gap-2">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg glass-pill !bg-white/5 !border-white/10 hover:!bg-white/10 transition cursor-pointer"
+              className="flex items-center gap-1 text-xs px-2.5 py-1 glass-button-on-dark cursor-pointer"
               title="Copiar todos os logs"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
@@ -51,7 +51,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg glass-pill !bg-white/5 !border-white/10 hover:!bg-white/10 transition cursor-pointer"
+              className="p-1.5 glass-icon-button-on-dark cursor-pointer"
               title="Fechar"
             >
               <X className="w-4 h-4" strokeWidth={1.5} />

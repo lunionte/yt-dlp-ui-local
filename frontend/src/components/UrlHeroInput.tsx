@@ -159,7 +159,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-2 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
+                className="p-2 glass-icon-button cursor-pointer"
                 title="Limpar campo"
               >
                 <X className="w-4 h-4" strokeWidth={1.5} />
@@ -170,7 +170,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handlePasteClick}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-600 glass-pill rounded-xl transition cursor-pointer"
+                className="flex items-center gap-1 px-3 py-1.5 glass-button text-xs font-semibold cursor-pointer"
               >
                 <Clipboard className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span className="hidden sm:inline">Colar</span>
@@ -180,7 +180,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             <button
               type="submit"
               disabled={isLoading || !url.trim()}
-              className="flex items-center gap-1.5 px-4 py-2.5 liquid-button text-xs sm:text-sm font-bold rounded-xl cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-2.5 liquid-button text-xs sm:text-sm font-bold cursor-pointer disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>

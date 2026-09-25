@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Botão de Configurações – Cápsula de vidro */}
         <button
           onClick={onOpenSettings}
-          className="relative w-10 h-10 rounded-xl glass-pill flex items-center justify-center text-slate-500 hover:text-slate-700 transition-all cursor-pointer"
+          className="relative w-10 h-10 glass-icon-button cursor-pointer"
           title="Configurações"
         >
           <Settings className="w-[18px] h-[18px]" strokeWidth={1.5} />

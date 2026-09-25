@@ -245,7 +245,7 @@ export const App: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
-                  className="px-3 py-1.5 liquid-button text-xs font-semibold rounded-lg cursor-pointer shrink-0"
+                  className="px-3 py-1.5 glass-button text-xs font-semibold cursor-pointer shrink-0"
                 >
                   Ver Diagnóstico
                 </button>

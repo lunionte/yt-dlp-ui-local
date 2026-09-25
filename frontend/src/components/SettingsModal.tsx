@@ -166,7 +166,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl glass-pill transition cursor-pointer"
+            className="p-2 glass-icon-button cursor-pointer"
           >
             <X className="w-5 h-5" strokeWidth={1.5} />
           </button>
@@ -187,7 +187,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="button"
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 glass-button text-xs font-medium cursor-pointer"
               >
                 <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                 Atualizar
@@ -290,8 +290,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   title="Selecionar pasta no computador"
                   className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-75 ${
                     folderSelected
-                      ? 'glass-pill !bg-emerald-50 text-emerald-700 !border-emerald-300'
-                      : 'glass-pill text-slate-700 hover:text-slate-900'
+                    ? 'glass-button-success'
+                      : 'glass-button'
                   }`}
                 >
                   {folderSelected ? (
@@ -308,7 +308,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={() => handleOpenFolder(defaultDownloadDir)}
                   disabled={!defaultDownloadDir || openingFolder}
                   title="Abrir pasta no Explorador de Arquivos do Windows"
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 glass-pill text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 glass-button text-xs font-bold cursor-pointer shrink-0"
                 >
                   {openingFolder ? (
                     <Loader2 className="w-4 h-4 animate-spin text-slate-600" strokeWidth={1.5} />
@@ -359,14 +359,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-700 transition cursor-pointer"
+              className="px-4 py-2 glass-button text-xs sm:text-sm font-semibold cursor-pointer"
             >
               Fechar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-1.5 px-5 py-2.5 liquid-button font-semibold text-xs sm:text-sm rounded-xl cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1.5 px-5 py-2.5 liquid-button font-semibold text-xs sm:text-sm cursor-pointer"
             >
               <Save className="w-4 h-4" strokeWidth={1.5} />
               <span>{saving ? 'Salvando...' : 'Salvar Alterações'}</span>
