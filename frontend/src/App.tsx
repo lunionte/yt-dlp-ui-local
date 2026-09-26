@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { TitleBar } from './components/TitleBar.js';
 import { Header } from './components/Header.js';
 import { UrlHeroInput } from './components/UrlHeroInput.js';
 import { OptionsPanel } from './components/OptionsPanel.js';
@@ -213,6 +214,9 @@ export const App: React.FC = () => {
     <div className="min-h-screen liquid-bg flex flex-col">
       {/* Overlay de iluminação ambiente */}
       <div className="fixed inset-0 liquid-overlay pointer-events-none z-0" />
+
+      {/* Barra de título customizada (visível apenas no Electron) */}
+      <TitleBar />
 
       {/* Header flutuante de vidro */}
       <div className="relative z-20">

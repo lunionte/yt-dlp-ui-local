@@ -42,7 +42,7 @@ yt-dlp + FFmpeg (necessários) | FFprobe (diagnóstico opcional)
 | `frontend/src/index.css` | Tipografia, superfícies/efeitos glass e estilos compartilhados de controles |
 | `frontend/public/assets/` | Imagens, fontes WOFF2 e licenças locais |
 | `desktop/src/main.ts` | Ciclo de vida, janela, Express, IPC e single-instance lock |
-| `desktop/src/preload.ts` | Superfície mínima de APIs expostas ao renderer |
+| `desktop/src/preload.cts` | Superfície mínima de APIs expostas ao renderer (.cjs CommonJS) |
 | `desktop/src/tray.ts` | Bandeja e preferência de minimizar para a bandeja |
 | `desktop/electron-builder.yml` | Conteúdo e alvos de distribuição |
 
@@ -57,6 +57,7 @@ Os arquivos-fonte são a referência. `backend/dist/`, `frontend/dist/`, `deskto
 - `QueueService` mantém jobs/histórico somente em memória. O limite de downloads ativos vem de `maxConcurrentDownloads` (1–5, padrão 2); cada job conserva no máximo 200 linhas de log.
 - `GET /api/downloads/events` envia eventos SSE e heartbeat a cada 20 s, sem snapshot/replay. Uma reconexão não garante recuperação dos eventos perdidos; considere reconciliar com `GET /api/downloads` se alterar esse fluxo.
 - Sistema: `GET /api/system/check`, `POST /api/system/config`, `POST /api/system/browse` e `POST /api/system/open-folder`.
+- IPC Desktop (Electron): além de notificações e pastas, expõe `minimizeWindow`, `maximizeWindow`, `closeWindow`, `isWindowMaximized` e listener `onMaximizeChange` (`window-maximized-change`) para a janela frameless com `<TitleBar />` customizada em React.
 - Backend e frontend mantêm alguns tipos de API em arquivos separados (`backend/src/schemas/` e `frontend/src/types/`). Atualize os dois lados quando mudar um payload; não há geração/validação compartilhada hoje.
 
 ## Binários, configuração e persistência
@@ -82,6 +83,7 @@ Os arquivos-fonte são a referência. `backend/dist/`, `frontend/dist/`, `deskto
 1. Preserve `contextIsolation: true`, `nodeIntegration: false` e a API mínima de `contextBridge`; não exponha Node.js ao renderer.
 2. Preserve janela `show: false`/`ready-to-show`, single-instance lock, cleanup do Express/bandeja e paridade entre Setup e Portable.
 3. Empacote somente recursos necessários. Yt-dlp e FFmpeg são essenciais; FFprobe é opcional.
+4. Preload deve ser escrito em `desktop/src/preload.cts` para gerar `dist/preload.cjs` (CommonJS), garantindo compatibilidade nativa com o sandbox e `contextBridge` do Electron sem erros de ESM fora de módulo.
 
 ### Frontend
 

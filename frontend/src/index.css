@@ -616,3 +616,15 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.5);
 }
+
+/* ── Janela Desktop Frameless (Electron) ── */
+
+.app-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+

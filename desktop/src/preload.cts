@@ -1,8 +1,8 @@
 /**
  * Electron Preload Script — Bridge segura entre renderer e main process.
  *
- * Expõe apenas APIs mínimas e necessárias via contextBridge,
- * mantendo contextIsolation:true e nodeIntegration:false.
+ * Usa CommonJS (.cts -> .cjs) para compatibilidade nativa com o Electron
+ * em todos os modos (sandboxed, contextIsolation, packaged e dev).
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
@@ -25,4 +25,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** Abre a pasta no explorador nativo do sistema operacional */
   openFolder: (folderPath: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('open-folder', folderPath),
+
+  /** Minimiza a janela */
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke('window-minimize'),
+
+  /** Alterna entre maximizar e restaurar a janela */
+  maximizeWindow: (): Promise<void> => ipcRenderer.invoke('window-maximize'),
+
+  /** Fecha a janela (ou minimiza para a bandeja se configurado) */
+  closeWindow: (): Promise<void> => ipcRenderer.invoke('window-close'),
+
+  /** Retorna se a janela está maximizada */
+  isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-is-maximized'),
+
+  /** Registra listener para alterações de estado de maximização da janela */
+  onMaximizeChange: (callback: (isMaximized: boolean) => void): void => {
+    ipcRenderer.on('window-maximized-change', (_event, isMax) => callback(isMax));
+  },
 });
