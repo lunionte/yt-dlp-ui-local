@@ -207,31 +207,41 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
           </div>
         </div>
 
-        {/* Métricas em Tempo Real — Tipografia Mono */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/40 text-xs text-slate-600">
-          <div className="flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 text-amber-500" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px]">Velocidade:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px]">{job.progress.speed || '--'}</span>
+        {/* Métricas em Tempo Real — Tipografia Mono adaptada a colunas estreitas */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/40 text-xs text-slate-600">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" strokeWidth={1.5} />
+            <span className="text-slate-600 font-medium text-[11px] shrink-0">Velocidade:</span>
+            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
+              {isCompleted ? 'Finalizado' : (job.progress.speed && job.progress.speed !== 'NA' ? job.progress.speed : '--')}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <HardDrive className="w-3.5 h-3.5 text-indigo-500" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px]">Tamanho:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">{job.progress.totalBytes || '--'}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <HardDrive className="w-3.5 h-3.5 text-indigo-500 shrink-0" strokeWidth={1.5} />
+            <span className="text-slate-600 font-medium text-[11px] shrink-0">Tamanho:</span>
+            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
+              {job.progress.totalBytes && job.progress.totalBytes !== 'NA' ? job.progress.totalBytes : (job.progress.downloadedBytes || '--')}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <FileCheck className="w-3.5 h-3.5 text-emerald-600" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px]">Baixado:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">{job.progress.downloadedBytes || '0 B'}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <FileCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" strokeWidth={1.5} />
+            <span className="text-slate-600 font-medium text-[11px] shrink-0">Baixado:</span>
+            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
+              {isCompleted ? (job.progress.totalBytes || job.progress.downloadedBytes || '100%') : (job.progress.downloadedBytes || '0 B')}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-blue-500" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px]">Restante:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px]">{job.progress.eta || '--'}</span>
-          </div>
+          {!isCompleted && (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" strokeWidth={1.5} />
+              <span className="text-slate-600 font-medium text-[11px] shrink-0">Restante:</span>
+              <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
+                {job.progress.eta && job.progress.eta !== 'NA' ? job.progress.eta : '--'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Mensagem de Erro */}

@@ -58,6 +58,7 @@ Os arquivos-fonte são a referência. `backend/dist/`, `frontend/dist/`, `deskto
 - `GET /api/downloads/events` envia eventos SSE e heartbeat a cada 20 s, sem snapshot/replay. Uma reconexão não garante recuperação dos eventos perdidos; considere reconciliar com `GET /api/downloads` se alterar esse fluxo.
 - Sistema: `GET /api/system/check`, `POST /api/system/config`, `POST /api/system/browse` e `POST /api/system/open-folder`.
 - IPC Desktop (Electron): além de notificações e pastas, expõe `minimizeWindow`, `maximizeWindow`, `closeWindow`, `isWindowMaximized` e listener `onMaximizeChange` (`window-maximized-change`) para a janela frameless com `<TitleBar />` customizada em React.
+- Interface Single-Viewport: topo consolidado em `<TitleBar />` fixo (`sticky top-0 z-50`), removendo o `<Header />` flutuante intermediário. `UrlHeroInput` e `OptionsPanel` foram unificados em `<DownloaderCard />` (cartão único contíguo de vidro sem vão vazio, máscara gradiente fade na URL e sanitização de erros da CLI via `formatFriendlyErrorMessage`).
 - Backend e frontend mantêm alguns tipos de API em arquivos separados (`backend/src/schemas/` e `frontend/src/types/`). Atualize os dois lados quando mudar um payload; não há geração/validação compartilhada hoje.
 
 ## Binários, configuração e persistência

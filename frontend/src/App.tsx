@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TitleBar } from './components/TitleBar.js';
-import { Header } from './components/Header.js';
-import { UrlHeroInput } from './components/UrlHeroInput.js';
-import { OptionsPanel } from './components/OptionsPanel.js';
+import { DownloaderCard } from './components/DownloaderCard.js';
 import { DownloadItem } from './components/DownloadItem.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { useDownloadEvents } from './hooks/useDownloadEvents.js';
@@ -129,6 +127,7 @@ export const App: React.FC = () => {
   }, []);
 
   const handleClearMetadata = useCallback(() => {
+    setActionError(null);
     handleCancelMetadata();
   }, [handleCancelMetadata]);
 
@@ -177,7 +176,6 @@ export const App: React.FC = () => {
     }
   };
 
-
   // ── Electron: notificação nativa quando um download é concluído ──
   useEffect(() => {
     const api = (window as any).electronAPI;
@@ -203,7 +201,6 @@ export const App: React.FC = () => {
     }
   }, [jobs]);
 
-
   const activeJobs = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing');
 
   // Determina se deve usar layout split (quando há conteúdo na coluna direita)
@@ -215,49 +212,45 @@ export const App: React.FC = () => {
       {/* Overlay de iluminação ambiente */}
       <div className="fixed inset-0 liquid-overlay pointer-events-none z-0" />
 
-      {/* Barra de título customizada (visível apenas no Electron) */}
-      <TitleBar />
+      {/* ── TopBar Fixa e Consolidada no Topo Absoluto (Logo, Status, Configurações e Controles de Janela) ── */}
+      <TitleBar
+        systemStatus={systemStatus}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        sseConnected={connected}
+      />
 
-      {/* Header flutuante de vidro */}
-      <div className="relative z-20">
-        <Header
-          systemStatus={systemStatus}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          sseConnected={connected}
-        />
-      </div>
+      {/* ── Conteúdo Principal Otimizado para Visão Única (Single-Viewport) ── */}
+      <main className="flex-1 relative z-10 w-full max-w-6xl xl:max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col justify-start">
 
-      <main className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-
-        {/* Layout dinâmico: centralizado → split-screen */}
+        {/* Layout dinâmico: Centralizado Amplo → Split-Screen */}
         <div className={`transition-all duration-500 ease-out ${
           showSplit
-            ? 'grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start'
-            : 'max-w-4xl mx-auto space-y-6'
+            ? 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start'
+            : 'max-w-3xl xl:max-w-4xl mx-auto w-full space-y-4'
         }`}>
 
-          {/* ══ Coluna Esquerda: Input + Opções ══ */}
-          <div className={`space-y-6 ${showSplit ? 'lg:col-span-7' : ''}`}>
-            {/* Aviso se binários essenciais não puderem ser inicializados */}
+          {/* ══ Coluna Esquerda: Cartão Unificado DownloaderCard (Input + Opções Contíguas) ══ */}
+          <div className={`space-y-4 ${showSplit ? 'lg:col-span-7' : 'w-full'}`}>
+            {/* Aviso discreto se binários essenciais não puderem ser inicializados */}
             {systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) && (
-              <div className="glass-pill !bg-amber-50/50 !border-amber-200/50 rounded-2xl p-4 flex items-center justify-between gap-4 text-xs text-amber-700">
-                <div className="flex items-center gap-2.5">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" strokeWidth={1.5} />
+              <div className="glass-pill !bg-amber-50/50 !border-amber-200/50 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-amber-700">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" strokeWidth={1.5} />
                   <span>
                     Uma das ferramentas integradas (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não pôde ser inicializada.
                   </span>
                 </div>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
-                  className="px-3 py-1.5 glass-button text-xs font-semibold cursor-pointer shrink-0"
+                  className="px-2.5 py-1 glass-button text-xs font-semibold cursor-pointer shrink-0"
                 >
                   Ver Diagnóstico
                 </button>
               </div>
             )}
 
-            {/* Hero Card de Vidro Líquido */}
-            <UrlHeroInput
+            {/* Cartão Unificado: Entrada de URL, Prévia e Opções integradas sem vão vazio */}
+            <DownloaderCard
               url={url}
               onChangeUrl={(val) => {
                 setUrl(val);
@@ -265,49 +258,38 @@ export const App: React.FC = () => {
               }}
               onFetchMetadata={handleFetchMetadata}
               onCancelMetadata={handleCancelMetadata}
-              isLoading={isLoadingMetadata}
+              isLoadingMetadata={isLoadingMetadata}
               metadata={metadata}
               onClearMetadata={handleClearMetadata}
+              options={{ ...downloadOptions, url: url || downloadOptions.url }}
+              onChangeOptions={setDownloadOptions}
+              defaultFolder={systemStatus?.config.defaultDownloadDir || 'Downloads'}
+              onStartDownload={handleStartDownload}
+              isStartingDownload={isStartingDownload}
+              actionError={actionError}
+              onDismissError={() => setActionError(null)}
             />
-
-            {actionError && (
-              <div className="glass-pill !bg-rose-50/50 !border-rose-200/50 text-rose-600 text-xs sm:text-sm rounded-2xl p-4 text-center">
-                {actionError}
-              </div>
-            )}
-
-            {/* Painel de Opções (exibido quando há URL ou metadados) */}
-            {(url || metadata) && (
-              <OptionsPanel
-                options={{ ...downloadOptions, url: url || downloadOptions.url }}
-                onChangeOptions={setDownloadOptions}
-                metadata={metadata}
-                defaultFolder={systemStatus?.config.defaultDownloadDir || 'Downloads'}
-                onStartDownload={handleStartDownload}
-                isStarting={isStartingDownload}
-              />
-            )}
           </div>
 
-          {/* ══ Coluna Direita: Fila de Downloads e Histórico ══ */}
+          {/* ══ Coluna Direita: Fila de Downloads e Histórico (Split-Screen) ══ */}
           {jobs.length > 0 && (
-            <div className={`space-y-4 ${showSplit ? 'lg:col-span-5' : ''}`}>
-              <div className="flex items-center justify-between pb-3 border-b border-white/30">
+            <div className={`space-y-3 ${showSplit ? 'lg:col-span-5' : ''}`}>
+              <div className="flex items-center justify-between pb-2.5 border-b border-white/30">
                 <div className="flex items-center gap-2">
-                  <ListFilter className="w-4 h-4 text-slate-500" strokeWidth={1.5} />
-                  <h2 className="text-sm font-bold text-slate-700 tracking-tight">
+                  <ListFilter className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
+                  <h2 className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight">
                     Downloads ({jobs.length})
                   </h2>
                 </div>
                 {activeJobs.length > 0 && (
-                  <span className="font-mono text-xs px-2.5 py-0.5 rounded-full glass-segment-active text-blue-600 font-semibold">
+                  <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full glass-segment-active text-blue-600 font-semibold">
                     {activeJobs.length} em andamento
                   </span>
                 )}
               </div>
 
-              {/* Lista de Downloads */}
-              <div className="space-y-3.5">
+              {/* Lista de Downloads com rolagem interna suave se houver muitos itens */}
+              <div className="space-y-3 max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
                 {jobs.map((job) => (
                   <DownloadItem
                     key={job.id}
@@ -322,17 +304,17 @@ export const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Rodapé Minimalista */}
-      <footer className="relative z-10 border-t border-white/20 py-6 text-center text-xs text-slate-400">
+      {/* ── Rodapé com Contraste Acessível (WCAG AA) ── */}
+      <footer className="relative z-10 border-t border-white/20 py-3 text-center text-xs text-slate-600 font-medium">
         <p>
           yt-dlp GUI • Orquestração local segura com Node.js, Express &amp; FFmpeg
-          {(window as any).electronAPI?.isElectron && (
-            <span className="ml-1 text-slate-300">• Desktop</span>
+          {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
+            <span className="ml-1 text-slate-500 font-semibold">• Desktop</span>
           )}
         </p>
       </footer>
 
-      {/* Modal de Configurações */}
+      {/* ── Modal de Configurações ── */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
