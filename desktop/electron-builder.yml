@@ -18,8 +18,6 @@ extraResources:
     to: "yt-dlp.exe"
   - from: "../ffmpeg.exe"
     to: "ffmpeg.exe"
-  - from: "../ffprobe.exe"
-    to: "ffprobe.exe"
   - from: "resources/icon.ico"
     to: "icon.ico"
 

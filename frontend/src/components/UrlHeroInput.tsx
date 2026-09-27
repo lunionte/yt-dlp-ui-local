@@ -7,6 +7,7 @@ interface UrlHeroInputProps {
   url: string;
   onChangeUrl: (url: string) => void;
   onFetchMetadata: (url: string) => Promise<void>;
+  onCancelMetadata: () => void;
   isLoading: boolean;
   metadata: VideoMetadata | null;
   onClearMetadata: () => void;
@@ -16,6 +17,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   url,
   onChangeUrl,
   onFetchMetadata,
+  onCancelMetadata,
   isLoading,
   metadata,
   onClearMetadata,
@@ -55,6 +57,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
   const triggerImmediateFetch = (rawText: string) => {
     const trimmed = rawText.trim();
     if (!trimmed) return;
+    onCancelMetadata();
     onChangeUrl(trimmed);
 
     if (isLikelyMediaUrl(trimmed)) {
@@ -62,6 +65,14 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
       lastFetchedUrlRef.current = normalized;
       onFetchMetadata(normalized);
     }
+  };
+
+  const handleUrlChange = (nextUrl: string) => {
+    if (nextUrl !== url) {
+      lastFetchedUrlRef.current = '';
+      onCancelMetadata();
+    }
+    onChangeUrl(nextUrl);
   };
 
   const handlePasteClick = async () => {
@@ -97,6 +108,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
 
   const handleClear = () => {
     lastFetchedUrlRef.current = '';
+    onCancelMetadata();
     onChangeUrl('');
     onClearMetadata();
   };
@@ -132,7 +144,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             type="text"
             inputMode="url"
             value={url}
-            onChange={(e) => onChangeUrl(e.target.value)}
+            onChange={(e) => handleUrlChange(e.target.value)}
             onPaste={handleInputPaste}
             placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)"
             className="font-mono w-full py-4 pl-5 pr-32 text-slate-800 placeholder:text-slate-500 text-sm bg-transparent rounded-2xl outline-none tracking-tight font-medium"
@@ -147,7 +159,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="p-2 text-slate-500 hover:text-slate-800 rounded-lg transition cursor-pointer"
+                className="p-2 glass-icon-button cursor-pointer"
                 title="Limpar campo"
               >
                 <X className="w-4 h-4" strokeWidth={1.5} />
@@ -158,7 +170,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
               <button
                 type="button"
                 onClick={handlePasteClick}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-600 glass-pill rounded-xl transition cursor-pointer"
+                className="flex items-center gap-1 px-3 py-1.5 glass-button text-xs font-semibold cursor-pointer"
               >
                 <Clipboard className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span className="hidden sm:inline">Colar</span>
@@ -168,7 +180,7 @@ export const UrlHeroInput: React.FC<UrlHeroInputProps> = ({
             <button
               type="submit"
               disabled={isLoading || !url.trim()}
-              className="flex items-center gap-1.5 px-4 py-2.5 liquid-button text-xs sm:text-sm font-bold rounded-xl cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-2.5 liquid-button text-xs sm:text-sm font-bold cursor-pointer disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <>

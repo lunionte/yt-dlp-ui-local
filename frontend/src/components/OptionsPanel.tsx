@@ -159,10 +159,10 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
           <button
             type="button"
             onClick={() => update('mode', 'video')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${
               isVideo
-                ? 'glass-segment-active text-blue-600'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'glass-segment-active'
+                : ''
             }`}
           >
             <Video className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -171,10 +171,10 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
           <button
             type="button"
             onClick={() => update('mode', 'audio')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${
               !isVideo
-                ? 'glass-segment-active text-blue-600'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'glass-segment-active'
+                : ''
             }`}
           >
             <Music className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -291,8 +291,8 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
               title="Selecionar pasta no computador"
               className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-75 ${
                 folderSelected
-                  ? 'glass-pill !bg-emerald-50 text-emerald-700 !border-emerald-300'
-                  : 'glass-pill text-slate-700 hover:text-slate-900'
+                ? 'glass-button-success'
+                : 'glass-button'
               }`}
             >
               {folderSelected ? (
@@ -309,7 +309,7 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
               onClick={handleOpenFolder}
               disabled={isOpeningFolder || !(options.outputDir || defaultFolder)}
               title="Abrir pasta no Explorador de Arquivos do Windows"
-              className="flex items-center gap-1.5 px-3.5 py-2.5 glass-pill text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 glass-button text-xs font-bold cursor-pointer shrink-0"
             >
               {isOpeningFolder ? (
                 <Loader2 className="w-4 h-4 animate-spin text-slate-600" strokeWidth={1.5} />
@@ -361,7 +361,7 @@ export const OptionsPanel: React.FC<OptionsPanelProps> = ({
           type="button"
           onClick={onStartDownload}
           disabled={isStarting || !options.url}
-          className="w-full sm:w-auto px-6 py-3 liquid-button font-bold text-sm rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+          className="w-full sm:w-auto px-6 py-3 liquid-button font-bold text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
         >
           <Download className="w-4 h-4" strokeWidth={1.5} />
           <span>Iniciar Download</span>

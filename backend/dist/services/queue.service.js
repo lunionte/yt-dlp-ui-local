@@ -7,6 +7,7 @@ import { parseProgressLine } from './parser.service.js';
 class QueueService extends EventEmitter {
     jobs = new Map();
     activeHandles = new Map();
+    metadataControllers = new Map();
     constructor() {
         super();
     }
@@ -20,6 +21,7 @@ class QueueService extends EventEmitter {
         const job = this.jobs.get(id);
         if (!job)
             return false;
+        this.cancelMetadataFetch(id);
         if (job.status === 'downloading' || job.status === 'processing') {
             this.cancelJob(id);
         }
@@ -60,7 +62,9 @@ class QueueService extends EventEmitter {
         });
         // Tenta obter metadados em background se não tiver título prévio
         if (!initialTitle) {
-            fetchVideoInfo(options.url)
+            const controller = new AbortController();
+            this.metadataControllers.set(id, controller);
+            fetchVideoInfo(options.url, controller.signal)
                 .then((meta) => {
                 if (this.jobs.has(id)) {
                     const current = this.jobs.get(id);
@@ -76,6 +80,11 @@ class QueueService extends EventEmitter {
             })
                 .catch(() => {
                 // Mantém o título padrão se a prévia falhar
+            })
+                .finally(() => {
+                if (this.metadataControllers.get(id) === controller) {
+                    this.metadataControllers.delete(id);
+                }
             });
         }
         this.processQueue();
@@ -85,6 +94,7 @@ class QueueService extends EventEmitter {
         const job = this.jobs.get(id);
         if (!job)
             return false;
+        this.cancelMetadataFetch(id);
         if (job.status === 'queued') {
             job.status = 'cancelled';
             this.emitEvent({
@@ -117,6 +127,13 @@ class QueueService extends EventEmitter {
     }
     emitEvent(event) {
         this.emit('event', event);
+    }
+    cancelMetadataFetch(id) {
+        const controller = this.metadataControllers.get(id);
+        if (controller) {
+            controller.abort();
+            this.metadataControllers.delete(id);
+        }
     }
     processQueue() {
         const config = loadConfig();

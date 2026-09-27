@@ -98,6 +98,23 @@ function getAppIcon(): Electron.NativeImage {
   }
 }
 
+function resolvePreloadPath(): string {
+  const candidates = [
+    path.join(import.meta.dirname, 'preload.cjs'),
+    path.join(app.getAppPath(), 'dist', 'preload.cjs'),
+    path.join(APP_ROOT, 'desktop', 'dist', 'preload.cjs'),
+    path.join(APP_ROOT, 'dist', 'preload.cjs'),
+    path.join(import.meta.dirname, 'preload.js'),
+    path.join(app.getAppPath(), 'dist', 'preload.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return path.join(import.meta.dirname, 'preload.cjs');
+}
+
 // ─── Window ─────────────────────────────────────────────────────────
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -110,13 +127,28 @@ function createWindow(): BrowserWindow {
     title: 'yt-dlp GUI',
     backgroundColor: '#f8fafc', // slate-50 (combina com o tema Pillowcase)
     autoHideMenuBar: true,      // sem menu nativo
+    frame: false,               // Janela sem borda para controles customizados em React
     webPreferences: {
-      preload: path.join(import.meta.dirname, 'preload.js'),
+      preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
       devTools: IS_DEV,
     },
+  });
+
+  // ── Log de falhas de carregamento do preload ──
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error('[Electron] Falha ao executar script preload:', preloadPath, error);
+  });
+
+  // ── Notificar renderer sobre alterações no estado de maximização ──
+  window.on('maximize', () => {
+    window.webContents.send('window-maximized-change', true);
+  });
+
+  window.on('unmaximize', () => {
+    window.webContents.send('window-maximized-change', false);
   });
 
   // ── Exibir somente quando o conteúdo estiver pronto ──
@@ -202,6 +234,33 @@ function setupIPC(): void {
       console.error('[Electron] Falha ao abrir pasta:', err);
       return { success: false, error: err.message };
     }
+  });
+
+  // ── Controles de Janela (Frameless) ──
+  ipcMain.handle('window-minimize', () => {
+    const targetWin = win || BrowserWindow.getFocusedWindow();
+    if (targetWin) targetWin.minimize();
+  });
+
+  ipcMain.handle('window-maximize', () => {
+    const targetWin = win || BrowserWindow.getFocusedWindow();
+    if (targetWin) {
+      if (targetWin.isMaximized()) {
+        targetWin.unmaximize();
+      } else {
+        targetWin.maximize();
+      }
+    }
+  });
+
+  ipcMain.handle('window-close', () => {
+    const targetWin = win || BrowserWindow.getFocusedWindow();
+    if (targetWin) targetWin.close();
+  });
+
+  ipcMain.handle('window-is-maximized', () => {
+    const targetWin = win || BrowserWindow.getFocusedWindow();
+    return targetWin ? targetWin.isMaximized() : false;
   });
 }
 

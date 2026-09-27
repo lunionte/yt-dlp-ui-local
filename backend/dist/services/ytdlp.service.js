@@ -9,103 +9,198 @@ const execFileAsync = promisify(execFile);
 const metadataCache = new Map();
 const inFlightFetches = new Map();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
-export async function fetchVideoInfo(rawUrl) {
+const MAX_CONCURRENT_METADATA_FETCHES = 2;
+let activeMetadataFetches = 0;
+const metadataWaiters = [];
+function createAbortError() {
+    const error = new Error('Consulta de metadados cancelada');
+    error.name = 'AbortError';
+    return error;
+}
+function acquireMetadataSlot(signal) {
+    if (signal.aborted)
+        return Promise.reject(createAbortError());
+    return new Promise((resolve, reject) => {
+        const start = (release) => {
+            signal.removeEventListener('abort', onAbort);
+            resolve(release);
+        };
+        const onAbort = () => {
+            const index = metadataWaiters.findIndex((waiter) => waiter.onAbort === onAbort);
+            if (index !== -1)
+                metadataWaiters.splice(index, 1);
+            reject(createAbortError());
+        };
+        if (activeMetadataFetches < MAX_CONCURRENT_METADATA_FETCHES) {
+            activeMetadataFetches += 1;
+            start(() => releaseMetadataSlot());
+            return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+        metadataWaiters.push({ signal, start, reject, onAbort });
+    });
+}
+function releaseMetadataSlot() {
+    while (metadataWaiters.length > 0) {
+        const waiter = metadataWaiters.shift();
+        waiter.signal.removeEventListener('abort', waiter.onAbort);
+        if (waiter.signal.aborted) {
+            waiter.reject(createAbortError());
+            continue;
+        }
+        waiter.start(() => releaseMetadataSlot());
+        return;
+    }
+    activeMetadataFetches = Math.max(0, activeMetadataFetches - 1);
+}
+function subscribeToFetch(entry, signal) {
+    if (signal?.aborted)
+        return Promise.reject(createAbortError());
+    entry.consumers += 1;
+    return new Promise((resolve, reject) => {
+        let finished = false;
+        const finish = (callback) => {
+            if (finished)
+                return;
+            finished = true;
+            signal?.removeEventListener('abort', onAbort);
+            entry.consumers = Math.max(0, entry.consumers - 1);
+            if (!entry.settled && entry.consumers === 0)
+                entry.controller.abort();
+            callback();
+        };
+        const onAbort = () => finish(() => reject(createAbortError()));
+        signal?.addEventListener('abort', onAbort, { once: true });
+        entry.promise.then((data) => finish(() => resolve(data)), (error) => finish(() => reject(error)));
+    });
+}
+function isSkipDashCompatibilityError(error) {
+    const details = error;
+    const message = `${details?.message || ''}\n${details?.stderr || ''}`.toLowerCase();
+    return /extractor.?args|skip=dash/.test(message)
+        && /invalid|unsupported|unknown|unrecognized|not recognized|no such/.test(message);
+}
+export async function fetchVideoInfo(rawUrl, signal) {
     const normalizedUrl = normalizeMediaUrl(rawUrl);
+    if (signal?.aborted)
+        throw createAbortError();
     // 1. Verificação no cache de memória
     const cached = metadataCache.get(normalizedUrl);
     if (cached && cached.expiresAt > Date.now()) {
         return cached.data;
     }
     // 2. Deduplicação de requisições concorrentes (se já estiver buscando a mesma URL, aguarda a mesma promessa)
-    if (inFlightFetches.has(normalizedUrl)) {
-        return inFlightFetches.get(normalizedUrl);
+    const existingFetch = inFlightFetches.get(normalizedUrl);
+    if (existingFetch && !existingFetch.controller.signal.aborted) {
+        return subscribeToFetch(existingFetch, signal);
     }
+    if (existingFetch)
+        inFlightFetches.delete(normalizedUrl);
+    const controller = new AbortController();
+    let entry;
     const fetchPromise = (async () => {
-        const config = loadConfig();
-        const ytdlpPath = config.ytdlpPath;
-        // Flags de alta performance para extração rápida de metadados
-        const buildArgs = (skipDash = true) => {
-            const args = [
-                '--dump-single-json',
-                '--no-playlist',
-                '--no-warnings',
-                '--skip-download',
-                '--no-check-certificates',
-                '--no-call-home',
-                '--socket-timeout',
-                '10',
-            ];
-            if (skipDash && (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be'))) {
-                args.push('--extractor-args', 'youtube:skip=dash');
+        const releaseSlot = await acquireMetadataSlot(controller.signal);
+        try {
+            const config = loadConfig();
+            const ytdlpPath = config.ytdlpPath;
+            // Flags de alta performance para extração rápida de metadados
+            const buildArgs = (skipDash = true) => {
+                const args = [
+                    '--dump-single-json',
+                    '--no-playlist',
+                    '--no-warnings',
+                    '--skip-download',
+                    '--no-call-home',
+                    '--socket-timeout',
+                    '10',
+                ];
+                if (skipDash && (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be'))) {
+                    args.push('--extractor-args', 'youtube:skip=dash');
+                }
+                args.push(normalizedUrl);
+                return args;
+            };
+            let stdout = '';
+            const deadline = Date.now() + 45000;
+            const runMetadata = async (skipDash) => {
+                const timeout = Math.min(30000, deadline - Date.now());
+                if (timeout <= 0)
+                    throw new Error('Tempo limite para consulta de metadados excedido');
+                return execFileAsync(ytdlpPath, buildArgs(skipDash), {
+                    maxBuffer: 50 * 1024 * 1024,
+                    timeout,
+                    signal: controller.signal,
+                });
+            };
+            try {
+                const res = await runMetadata(true);
+                stdout = res.stdout;
             }
-            args.push(normalizedUrl);
-            return args;
-        };
-        let stdout = '';
-        try {
-            const res = await execFileAsync(ytdlpPath, buildArgs(true), {
-                maxBuffer: 50 * 1024 * 1024,
-                timeout: 30000,
-            });
-            stdout = res.stdout;
-        }
-        catch {
-            // Fallback sem youtube:skip=dash caso o extrator específico falhe
-            const res = await execFileAsync(ytdlpPath, buildArgs(false), {
-                maxBuffer: 50 * 1024 * 1024,
-                timeout: 30000,
-            });
-            stdout = res.stdout;
-        }
-        try {
-            const data = JSON.parse(stdout);
-            // Coleta resoluções disponíveis
-            const resolutionsSet = new Set();
-            if (Array.isArray(data.formats)) {
-                for (const f of data.formats) {
-                    if (f.height && f.vcodec && f.vcodec !== 'none') {
-                        resolutionsSet.add(`${f.height}p`);
+            catch (error) {
+                if (controller.signal.aborted || !isSkipDashCompatibilityError(error))
+                    throw error;
+                // Só repete sem a otimização do YouTube se o erro apontar incompatibilidade dessa opção.
+                const res = await runMetadata(false);
+                stdout = res.stdout;
+            }
+            try {
+                const data = JSON.parse(stdout);
+                // Coleta resoluções disponíveis
+                const resolutionsSet = new Set();
+                if (Array.isArray(data.formats)) {
+                    for (const f of data.formats) {
+                        if (f.height && f.vcodec && f.vcodec !== 'none') {
+                            resolutionsSet.add(`${f.height}p`);
+                        }
                     }
                 }
+                // Ordena do maior para o menor
+                const availableResolutions = Array.from(resolutionsSet).sort((a, b) => {
+                    return parseInt(b, 10) - parseInt(a, 10);
+                });
+                const result = {
+                    id: data.id || 'unknown',
+                    title: data.title || 'Sem título',
+                    thumbnail: data.thumbnail,
+                    duration: data.duration,
+                    durationString: data.duration_string,
+                    uploader: data.uploader || data.channel,
+                    description: data.description ? data.description.slice(0, 300) : undefined,
+                    availableResolutions,
+                };
+                // Armazena no cache
+                metadataCache.set(normalizedUrl, {
+                    data: result,
+                    expiresAt: Date.now() + CACHE_TTL_MS,
+                });
+                // Limpeza de cache antigo para economizar memória (máximo 100 itens)
+                if (metadataCache.size > 100) {
+                    const oldestKey = metadataCache.keys().next().value;
+                    if (oldestKey)
+                        metadataCache.delete(oldestKey);
+                }
+                return result;
             }
-            // Ordena do maior para o menor
-            const availableResolutions = Array.from(resolutionsSet).sort((a, b) => {
-                return parseInt(b, 10) - parseInt(a, 10);
-            });
-            const result = {
-                id: data.id || 'unknown',
-                title: data.title || 'Sem título',
-                thumbnail: data.thumbnail,
-                duration: data.duration,
-                durationString: data.duration_string,
-                uploader: data.uploader || data.channel,
-                description: data.description ? data.description.slice(0, 300) : undefined,
-                availableResolutions,
-            };
-            // Armazena no cache
-            metadataCache.set(normalizedUrl, {
-                data: result,
-                expiresAt: Date.now() + CACHE_TTL_MS,
-            });
-            // Limpeza de cache antigo para economizar memória (máximo 100 itens)
-            if (metadataCache.size > 100) {
-                const oldestKey = metadataCache.keys().next().value;
-                if (oldestKey)
-                    metadataCache.delete(oldestKey);
+            catch (err) {
+                throw new Error(`Falha ao obter dados do vídeo: ${err.message}`);
             }
-            return result;
         }
-        catch (err) {
-            throw new Error(`Falha ao obter dados do vídeo: ${err.message}`);
+        finally {
+            releaseSlot();
         }
     })();
-    inFlightFetches.set(normalizedUrl, fetchPromise);
-    try {
-        return await fetchPromise;
-    }
-    finally {
-        inFlightFetches.delete(normalizedUrl);
-    }
+    entry = {
+        controller,
+        promise: fetchPromise.finally(() => {
+            entry.settled = true;
+            if (inFlightFetches.get(normalizedUrl) === entry)
+                inFlightFetches.delete(normalizedUrl);
+        }),
+        consumers: 0,
+        settled: false,
+    };
+    inFlightFetches.set(normalizedUrl, entry);
+    return subscribeToFetch(entry, signal);
 }
 export function buildYtdlpArgs(options) {
     const config = loadConfig();

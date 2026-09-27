@@ -134,7 +134,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
             <button
               type="button"
               onClick={() => setShowLogs(true)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg glass-pill text-slate-600 font-medium transition-all cursor-pointer"
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 glass-button font-medium cursor-pointer"
               title="Ver logs do yt-dlp"
             >
               <Terminal className="w-3.5 h-3.5" strokeWidth={1.5} />
@@ -146,7 +146,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
                 type="button"
                 onClick={handleCancel}
                 disabled={cancelling}
-                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg glass-pill !bg-rose-50/50 !border-rose-200/50 text-rose-600 font-medium transition-all cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1 text-xs px-3 py-1.5 glass-button-danger font-medium cursor-pointer"
               >
                 <Ban className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Cancelar</span>
@@ -157,7 +157,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
               <button
                 type="button"
                 onClick={handleOpenFolder}
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg glass-pill text-slate-600 font-medium transition-all cursor-pointer"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 glass-button font-medium cursor-pointer"
                 title="Abrir pasta de download no Explorador de Arquivos"
               >
                 <FolderOpen className="w-3.5 h-3.5 text-blue-500" strokeWidth={1.5} />
@@ -169,7 +169,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
               <button
                 type="button"
                 onClick={() => onDelete(job.id)}
-                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg glass-pill !border-transparent hover:!bg-rose-50/50 transition-all cursor-pointer"
+                className="p-1.5 glass-icon-button-danger cursor-pointer"
                 title="Remover da lista"
               >
                 <Trash2 className="w-4 h-4" strokeWidth={1.5} />

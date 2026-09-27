@@ -166,7 +166,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl glass-pill transition cursor-pointer"
+            className="p-2 glass-icon-button cursor-pointer"
           >
             <X className="w-5 h-5" strokeWidth={1.5} />
           </button>
@@ -187,7 +187,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 type="button"
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-600 font-medium cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 glass-button text-xs font-medium cursor-pointer"
               >
                 <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} strokeWidth={1.5} />
                 Atualizar
@@ -195,7 +195,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 leading-relaxed">
-              O <strong>yt-dlp</strong>, <strong>FFmpeg</strong> e <strong>FFprobe</strong> já vêm embutidos nativamente nesta aplicação. Não é necessário instalar ou configurar caminhos na sua máquina.
+              O <strong>yt-dlp</strong> e o <strong>FFmpeg</strong> vêm embutidos. O <strong>FFprobe</strong> é opcional e serve apenas para diagnóstico; se estiver no PATH, será detectado automaticamente.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
@@ -252,19 +252,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {systemStatus?.tools.ffprobe.available ? (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50">
                       <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
-                      OK
+                      {systemStatus.tools.ffprobe.embedded ? 'OK' : 'PATH'}
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-rose-50/50 text-rose-600 !border-rose-200/50">
-                      <AlertCircle className="w-3 h-3" strokeWidth={1.5} />
-                      Erro
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill text-slate-500">
+                      Opcional
                     </span>
                   )}
                 </div>
                 <div className="text-[11px] text-slate-500 font-mono truncate">
                   {systemStatus?.tools.ffprobe.available
-                    ? 'Inspetor Ativo'
-                    : 'Falha ao iniciar'}
+                    ? (systemStatus.tools.ffprobe.embedded ? 'Inspetor Ativo' : 'Encontrado no PATH')
+                    : 'Não incluído no Desktop'}
                 </div>
               </div>
             </div>
@@ -291,8 +290,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   title="Selecionar pasta no computador"
                   className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-75 ${
                     folderSelected
-                      ? 'glass-pill !bg-emerald-50 text-emerald-700 !border-emerald-300'
-                      : 'glass-pill text-slate-700 hover:text-slate-900'
+                    ? 'glass-button-success'
+                      : 'glass-button'
                   }`}
                 >
                   {folderSelected ? (
@@ -309,7 +308,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={() => handleOpenFolder(defaultDownloadDir)}
                   disabled={!defaultDownloadDir || openingFolder}
                   title="Abrir pasta no Explorador de Arquivos do Windows"
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 glass-pill text-slate-700 hover:text-slate-900 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 glass-button text-xs font-bold cursor-pointer shrink-0"
                 >
                   {openingFolder ? (
                     <Loader2 className="w-4 h-4 animate-spin text-slate-600" strokeWidth={1.5} />
@@ -360,14 +359,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-500 hover:text-slate-700 transition cursor-pointer"
+              className="px-4 py-2 glass-button text-xs sm:text-sm font-semibold cursor-pointer"
             >
               Fechar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-1.5 px-5 py-2.5 liquid-button font-semibold text-xs sm:text-sm rounded-xl cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1.5 px-5 py-2.5 liquid-button font-semibold text-xs sm:text-sm cursor-pointer"
             >
               <Save className="w-4 h-4" strokeWidth={1.5} />
               <span>{saving ? 'Salvando...' : 'Salvar Alterações'}</span>
