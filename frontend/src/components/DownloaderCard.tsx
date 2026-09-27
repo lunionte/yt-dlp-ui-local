@@ -262,10 +262,15 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
 
   return (
     <div className="w-full glass-card glass-specular rounded-3xl p-5 sm:p-7 transition-all duration-300 shadow-lg">
-      
-      {/* ── Cabeçalho Introdutório (Recolhe de forma compacta quando há conteúdo) ── */}
-      {!isCompactMode ? (
-        <div className="text-center mb-6 transition-all duration-300">
+
+      {/* ── Cabeçalho Hero Introdutório (Recolhe suavemente com animação quando há URL ou Metadados) ── */}
+      <div
+        className={`transition-all duration-500 ease-out overflow-hidden ${isCompactMode
+          ? 'max-h-0 opacity-0 -translate-y-4 pointer-events-none mb-0'
+          : 'max-h-72 opacity-100 translate-y-0 mb-6'
+          }`}
+      >
+        <div className="text-center pt-1">
           {/* Tile 3D de Vidro Líquido com Ícone Multimídia */}
           <div className="mx-auto w-14 h-14 sm:w-16 sm:h-16 rounded-2xl glass-tile-3d flex items-center justify-center mb-4 transition-transform duration-300 hover:scale-105">
             <Download className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500/80 relative z-10" strokeWidth={1.5} />
@@ -286,24 +291,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
             YouTube, Instagram, TikTok, SoundCloud, Bandcamp, Twitter/X e +1.000 sites
           </p>
         </div>
-      ) : (
-        <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/30">
-          <div className="flex items-center gap-2">
-            <Download className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Download de Mídia
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleClear}
-            className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-            <span>Novo link</span>
-          </button>
-        </div>
-      )}
+      </div>
 
       {/* ── Formulário de Entrada da URL com Máscara de Gradiente Fade à Direita ── */}
       <form onSubmit={handleSubmit} className="relative w-full">
@@ -314,7 +302,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
             value={url}
             onChange={(e) => handleUrlChange(e.target.value)}
             onPaste={handleInputPaste}
-            placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)"
+            placeholder="Cole ou digite o link (ex: youtube.com/watch?v=...)   "
             className="font-mono w-full py-3.5 pl-4 pr-36 sm:pr-40 text-slate-800 placeholder:text-slate-500 text-xs sm:text-sm bg-transparent rounded-2xl outline-none tracking-tight font-medium [mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent_100%)]"
             autoComplete="off"
             autoCorrect="off"
@@ -393,55 +381,69 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
         </div>
       )}
 
-      {/* ── Cartão de Prévia do Vídeo (quando metadados disponíveis) ── */}
-      {metadata && (
-        <div className="mt-4 glass-pill rounded-2xl p-3 sm:p-4 text-left flex flex-col sm:flex-row gap-3.5 items-start sm:items-center transition-all duration-200">
-          {metadata.thumbnail ? (
-            <img
-              src={metadata.thumbnail}
-              alt={metadata.title}
-              className="w-full sm:w-24 h-16 object-cover rounded-xl border border-white/60 bg-slate-100/50 shrink-0"
-            />
-          ) : (
-            <div className="w-full sm:w-24 h-16 rounded-xl glass-card flex items-center justify-center text-slate-400 shrink-0">
-              <Video className="w-6 h-6" strokeWidth={1.5} />
-            </div>
-          )}
+      {/* ── Painel de Opções & Prévia Integrado (Expansão fluida sem saltos de layout) ── */}
+      <div
+        className={`grid transition-all duration-500 ease-out ${isCompactMode
+          ? 'grid-rows-[1fr] opacity-100 mt-4'
+          : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+          }`}
+      >
+        <div className="overflow-hidden space-y-4">
 
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-1 leading-snug">
-              {metadata.title}
-            </h3>
-            <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-600 mt-1.5">
-              {metadata.uploader && (
-                <span className="flex items-center gap-1 text-[11px]">
-                  <User className="w-3 h-3 text-slate-500" strokeWidth={1.5} />
-                  <span className="truncate max-w-[140px] font-medium text-slate-700">{metadata.uploader}</span>
-                </span>
+          {/* Spotlight de Metadados / Skeleton de Carregamento */}
+          {metadata ? (
+            <div className="glass-pill rounded-2xl p-3 sm:p-3.5 text-left flex flex-col sm:flex-row gap-3.5 items-start sm:items-center">
+              {metadata.thumbnail ? (
+                <img
+                  src={metadata.thumbnail}
+                  alt={metadata.title}
+                  className="w-full sm:w-24 h-16 sm:h-14 object-cover rounded-xl border border-white/60 bg-slate-100/50 shrink-0"
+                />
+              ) : (
+                <div className="w-full sm:w-24 h-16 sm:h-14 rounded-xl glass-card flex items-center justify-center text-slate-400 shrink-0">
+                  <Video className="w-6 h-6" strokeWidth={1.5} />
+                </div>
               )}
-              {metadata.durationString && (
-                <span className="flex items-center gap-1 font-mono text-[11px] font-medium text-slate-700">
-                  <Clock className="w-3 h-3 text-slate-500" strokeWidth={1.5} />
-                  {metadata.durationString}
-                </span>
-              )}
-              {metadata.availableResolutions.length > 0 && (
-                <span className="font-mono px-1.5 py-0.5 rounded-md glass-segment-active text-blue-700 font-bold text-[10px]">
-                  até {metadata.availableResolutions[0]}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* ── Painel de Opções Integrado (Exibido sem vão/espaço quando há URL ou Metadados) ── */}
-      {(url || metadata) && (
-        <div className="mt-5 pt-4 border-t border-white/40 transition-all duration-300">
-          {/* Barra Superior de Opções com Segmented Control */}
-          <div className="flex items-center justify-between pb-3 mb-4">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-1 leading-snug">
+                  {metadata.title}
+                </h3>
+                <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-600 mt-1">
+                  {metadata.uploader && (
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <User className="w-3 h-3 text-slate-500" strokeWidth={1.5} />
+                      <span className="truncate max-w-[140px] font-medium text-slate-700">{metadata.uploader}</span>
+                    </span>
+                  )}
+                  {metadata.durationString && (
+                    <span className="flex items-center gap-1 font-mono text-[11px] font-medium text-slate-700">
+                      <Clock className="w-3 h-3 text-slate-500" strokeWidth={1.5} />
+                      {metadata.durationString}
+                    </span>
+                  )}
+                  {metadata.availableResolutions?.length > 0 && (
+                    <span className="font-mono px-1.5 py-0.5 rounded-md glass-segment-active text-blue-700 font-bold text-[10px]">
+                      até {metadata.availableResolutions[0]}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : isLoadingMetadata ? (
+            <div className="glass-pill rounded-2xl p-3 sm:p-3.5 flex items-center gap-3.5 animate-pulse">
+              <div className="w-full sm:w-24 h-16 sm:h-14 rounded-xl bg-slate-200/60 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3.5 bg-slate-200/70 rounded-md w-3/4" />
+                <div className="h-2.5 bg-slate-200/50 rounded-md w-1/3" />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Cabeçalho de Formato e Segmented Control */}
+          <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-1.5">
-              <SlidersHorizontal className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" strokeWidth={1.5} />
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                 Formato e Saída
               </h2>
@@ -452,9 +454,8 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
               <button
                 type="button"
                 onClick={() => update('mode', 'video')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${
-                  isVideo ? 'glass-segment-active' : ''
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${isVideo ? 'glass-segment-active' : ''
+                  }`}
               >
                 <Video className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Vídeo</span>
@@ -462,9 +463,8 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
               <button
                 type="button"
                 onClick={() => update('mode', 'audio')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${
-                  !isVideo ? 'glass-segment-active' : ''
-                }`}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer glass-segment-button ${!isVideo ? 'glass-segment-active' : ''
+                  }`}
               >
                 <Music className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Áudio</span>
@@ -472,18 +472,18 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
             </div>
           </div>
 
-          {/* Grid de Configurações de Download */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Grid de Formato: Resolução e Container */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {isVideo ? (
               <>
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
                     Resolução Máxima
                   </label>
                   <select
                     value={options.videoResolution}
                     onChange={(e) => update('videoResolution', e.target.value as VideoResolution)}
-                    className="w-full px-3 py-2 glass-select rounded-xl text-xs sm:text-sm font-medium text-slate-800 cursor-pointer"
+                    className="w-full px-3 py-2 glass-select rounded-xl text-xs font-medium text-slate-800 cursor-pointer"
                   >
                     {resolutions.map((r) => (
                       <option key={r.value} value={r.value}>
@@ -494,13 +494,13 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
-                    Container do Vídeo
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
+                    Container / Formato
                   </label>
                   <select
                     value={options.videoContainer}
                     onChange={(e) => update('videoContainer', e.target.value as VideoContainer)}
-                    className="w-full px-3 py-2 glass-select rounded-xl text-xs sm:text-sm font-medium text-slate-800 cursor-pointer"
+                    className="w-full px-3 py-2 glass-select rounded-xl text-xs font-medium text-slate-800 cursor-pointer"
                   >
                     <option value="mp4">MP4 (Recomendado / Universal)</option>
                     <option value="mkv">MKV (Suporta legendas e faixas)</option>
@@ -511,13 +511,13 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
             ) : (
               <>
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
                     Formato do Áudio
                   </label>
                   <select
                     value={options.audioFormat}
                     onChange={(e) => update('audioFormat', e.target.value as AudioFormat)}
-                    className="w-full px-3 py-2 glass-select rounded-xl text-xs sm:text-sm font-medium text-slate-800 cursor-pointer"
+                    className="w-full px-3 py-2 glass-select rounded-xl text-xs font-medium text-slate-800 cursor-pointer"
                   >
                     <option value="mp3">MP3 (Mais compatível)</option>
                     <option value="m4a">M4A / AAC (Leve e alta fidelidade)</option>
@@ -528,13 +528,13 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
                     Qualidade / Bitrate
                   </label>
                   <select
                     value={options.audioQuality}
                     onChange={(e) => update('audioQuality', e.target.value as AudioQuality)}
-                    className="w-full px-3 py-2 glass-select rounded-xl text-xs sm:text-sm font-medium text-slate-800 cursor-pointer"
+                    className="w-full px-3 py-2 glass-select rounded-xl text-xs font-medium text-slate-800 cursor-pointer"
                   >
                     <option value="320k">320 kbps (Máxima / Alta Fidelidade)</option>
                     <option value="256k">256 kbps (Muito Boa)</option>
@@ -545,98 +545,121 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
                 </div>
               </>
             )}
+          </div>
 
-            {/* Nome do Arquivo Customizado */}
+          {/* Grid de Destino e Nome do Arquivo */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Pasta de Destino como Widget Integrado */}
             <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
-                Nome do Arquivo (Opcional)
+              <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
+                Salvar em
               </label>
-              <input
-                type="text"
-                value={options.customFilename || ''}
-                onChange={(e) => update('customFilename', e.target.value)}
-                placeholder="Deixe em branco para usar o título original"
-                className="w-full px-3 py-2 glass-input rounded-xl text-xs font-medium text-slate-800 outline-none"
-              />
+              <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 glass-input rounded-xl min-h-[38px]">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={1.5} />
+                  <span className="text-xs font-mono font-medium text-slate-700 truncate" title={options.outputDir || defaultFolder}>
+                    {options.outputDir || defaultFolder}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleBrowseFolder}
+                    disabled={isBrowsing}
+                    className="px-2 py-1 rounded-lg text-xs font-bold glass-button cursor-pointer"
+                    title="Alterar pasta de destino"
+                  >
+                    {folderSelected ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <span className="text-[11px]">Alterar</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenFolder}
+                    disabled={isOpeningFolder}
+                    className="p-1 rounded-lg text-xs glass-button cursor-pointer"
+                    title="Abrir pasta no Explorador"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Pasta de Destino com Procurar e Abrir */}
+            {/* Renomear com Placeholder Inteligente */}
             <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1 tracking-wide">
-                Pasta de Destino
+              <label className="block text-[11px] font-bold text-slate-700 mb-1 tracking-wide">
+                Nome do Arquivo (Opcional)
               </label>
-              <div className="flex items-center gap-1.5">
+              <div className="relative flex items-center">
                 <input
                   type="text"
-                  readOnly
-                  value={options.outputDir || defaultFolder}
-                  className="flex-1 min-w-0 px-3 py-2 glass-input rounded-xl text-xs font-mono font-medium text-slate-700 outline-none truncate"
-                  title={options.outputDir || defaultFolder}
+                  value={options.customFilename || ''}
+                  onChange={(e) => update('customFilename', e.target.value)}
+                  placeholder={metadata?.title ? `Original: ${metadata.title}` : 'Usar título original'}
+                  className="w-full px-3 py-2 glass-input rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 outline-none pr-7"
                 />
-                <button
-                  type="button"
-                  onClick={handleBrowseFolder}
-                  disabled={isBrowsing}
-                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold glass-button cursor-pointer shrink-0"
-                  title="Alterar pasta de destino"
-                >
-                  {folderSelected ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  ) : (
-                    <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-                  )}
-                  <span className="hidden sm:inline">Procurar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenFolder}
-                  disabled={isOpeningFolder}
-                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold glass-button cursor-pointer shrink-0"
-                  title="Abrir pasta no explorador de arquivos"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">Abrir</span>
-                </button>
+                {options.customFilename && (
+                  <button
+                    type="button"
+                    onClick={() => update('customFilename', '')}
+                    className="absolute right-2 p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    title="Restaurar nome original"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Opções Avançadas de Embutir */}
-          <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 border-t border-white/20 text-xs text-slate-700">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={options.embedThumbnail}
-                onChange={(e) => update('embedThumbnail', e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-              <span>Embutir capa/thumbnail</span>
-            </label>
+          {/* Toggle Chips Interativos em vez de checkboxes nativos */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => update('embedThumbnail', !options.embedThumbnail)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${options.embedThumbnail
+                ? 'glass-segment-active text-blue-700 border-blue-300 font-bold'
+                : 'glass-pill text-slate-600 hover:text-slate-900'
+                }`}
+            >
+              <CheckCircle2 className={`w-3.5 h-3.5 ${options.embedThumbnail ? 'text-blue-600' : 'text-slate-400'}`} />
+              <span>Embutir Capa</span>
+            </button>
 
             {isVideo && (
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={options.embedSubtitles}
-                  onChange={(e) => update('embedSubtitles', e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                />
-                <span>Embutir legendas disponíveis</span>
-              </label>
+              <button
+                type="button"
+                onClick={() => update('embedSubtitles', !options.embedSubtitles)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${options.embedSubtitles
+                  ? 'glass-segment-active text-blue-700 border-blue-300 font-bold'
+                  : 'glass-pill text-slate-600 hover:text-slate-900'
+                  }`}
+              >
+                <CheckCircle2 className={`w-3.5 h-3.5 ${options.embedSubtitles ? 'text-blue-600' : 'text-slate-400'}`} />
+                <span>Embutir Legendas</span>
+              </button>
             )}
           </div>
 
           {/* Barra de Ação Final: Prévia do Arquivo + Iniciar Download */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-white/30">
-            <div className="text-[11px] text-slate-500 font-mono truncate max-w-sm">
-              <span className="font-semibold text-slate-600">Arquivo final:</span> {previewFilename}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-white/30">
+            <div className="flex items-center gap-2 text-xs text-slate-600 font-medium min-w-0">
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-white/60 border border-white/70 text-slate-700 font-bold uppercase shrink-0">
+                {ext}
+              </span>
+              <span className="truncate text-slate-500 font-mono text-[11px]">
+                {previewFilename}
+              </span>
             </div>
 
             <button
               type="button"
               onClick={onStartDownload}
               disabled={isStartingDownload || !url.trim()}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 liquid-button font-bold text-xs sm:text-sm shadow-md cursor-pointer disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-2 px-6 py-2.5 liquid-button font-bold text-xs sm:text-sm shadow-md cursor-pointer disabled:cursor-not-allowed shrink-0"
             >
               {isStartingDownload ? (
                 <>
@@ -652,7 +675,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
             </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

@@ -206,6 +206,7 @@ export const App: React.FC = () => {
   // Determina se deve usar layout split (quando há conteúdo na coluna direita)
   const hasContent = url || metadata || jobs.length > 0;
   const showSplit = hasContent && jobs.length > 0;
+  const isIdle = !url && !metadata && jobs.length === 0;
 
   return (
     <div className="min-h-screen liquid-bg flex flex-col">
@@ -220,13 +221,15 @@ export const App: React.FC = () => {
       />
 
       {/* ── Conteúdo Principal Otimizado para Visão Única (Single-Viewport) ── */}
-      <main className="flex-1 relative z-10 w-full max-w-6xl xl:max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col justify-start">
+      <main className="flex-1 relative z-10 w-full max-w-6xl xl:max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col transition-all duration-500 ease-out">
 
-        {/* Layout dinâmico: Centralizado Amplo → Split-Screen */}
-        <div className={`transition-all duration-500 ease-out ${
-          showSplit
-            ? 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start'
-            : 'max-w-3xl xl:max-w-4xl mx-auto w-full space-y-4'
+        {/* Layout dinâmico: Centralizado Ocioso → Centralizado Amplo → Split-Screen */}
+        <div className={`w-full transition-all duration-500 ease-out flex-1 flex flex-col ${
+          isIdle
+            ? 'justify-center items-center max-w-2xl xl:max-w-3xl mx-auto -mt-6 sm:-mt-10'
+            : showSplit
+              ? 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start justify-start'
+              : 'max-w-3xl xl:max-w-4xl mx-auto space-y-4 justify-start'
         }`}>
 
           {/* ══ Coluna Esquerda: Cartão Unificado DownloaderCard (Input + Opções Contíguas) ══ */}
