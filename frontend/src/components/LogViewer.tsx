@@ -12,14 +12,18 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
   const containerRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = React.useState(false);
 
+  const visibleLogs = React.useMemo(() => {
+    return logs.filter((l) => !l.startsWith('__PROGRESS__'));
+  }, [logs]);
+
   useEffect(() => {
     if (isOpen && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [logs, isOpen]);
+  }, [visibleLogs, isOpen]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(logs.join('\n'));
+    navigator.clipboard.writeText(visibleLogs.join('\n'));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -64,10 +68,10 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
           ref={containerRef}
           className="p-4 overflow-y-auto font-mono text-xs space-y-1 text-slate-300 flex-1 min-h-[300px]"
         >
-          {logs.length === 0 ? (
+          {visibleLogs.length === 0 ? (
             <p className="text-slate-500 italic">Nenhum log registrado ainda...</p>
           ) : (
-            logs.map((log, idx) => (
+            visibleLogs.map((log, idx) => (
               <div key={idx} className="leading-relaxed hover:bg-white/5 px-1.5 py-0.5 rounded break-all transition-colors">
                 {log}
               </div>

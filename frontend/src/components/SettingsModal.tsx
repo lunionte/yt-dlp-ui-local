@@ -238,7 +238,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono truncate">
+                <div className="text-[11px] text-slate-600 font-medium leading-tight">
                   {systemStatus?.tools.ffmpeg.available
                     ? 'Motor de Mídia Ativo'
                     : 'Falha ao iniciar'}
@@ -260,7 +260,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono truncate">
+                <div className="text-[11px] text-slate-600 font-medium leading-tight">
                   {systemStatus?.tools.ffprobe.available
                     ? (systemStatus.tools.ffprobe.embedded ? 'Inspetor Ativo' : 'Encontrado no PATH')
                     : 'Não incluído no Desktop'}
