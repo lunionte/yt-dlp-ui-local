@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "platform": "win32-x64",
+  "tools": {
+    "yt-dlp.exe": {
+      "version": "2026.08.19",
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "source": "local-provided",
+      "upstream": "https://github.com/yt-dlp/yt-dlp/releases"
+    },
+    "ffmpeg.exe": {
+      "version": "ffmpeg version 9.0.2-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "sha256": "3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec",
+      "source": "local-provided",
+      "upstream": "https://ffmpeg.org/download.html"
+    }
+  }
+}

@@ -14,6 +14,8 @@ files:
     to: "frontend/dist"
 
 extraResources:
+  - from: "../tools-lock.json"
+    to: "tools-lock.json"
   - from: "../yt-dlp.exe"
     to: "yt-dlp.exe"
   - from: "../ffmpeg.exe"

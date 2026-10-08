@@ -1,48 +1,36 @@
 import { Router } from 'express';
-import { CreateDownloadSchema } from '../schemas/download.schema.js';
+import { CreateDownloadSchema } from '@ytdlp/shared';
 import { queueService } from '../services/queue.service.js';
-const router = Router();
-// Listar downloads
-router.get('/', (_req, res) => {
-    const jobs = queueService.getJobs();
-    res.json(jobs);
-});
-// Detalhes de um download
-router.get('/:id', (req, res) => {
-    const job = queueService.getJob(req.params.id);
-    if (!job) {
-        res.status(404).json({ error: 'Download não encontrado' });
-        return;
-    }
-    res.json(job);
-});
-// Iniciar/enfileirar download
-router.post('/', async (req, res) => {
-    const result = CreateDownloadSchema.safeParse(req.body);
-    if (!result.success) {
-        res.status(400).json({ error: result.error.errors[0].message, details: result.error.format() });
-        return;
-    }
-    const initialTitle = typeof req.body.title === 'string' ? req.body.title : undefined;
-    const job = await queueService.addJob(result.data, initialTitle);
-    res.status(201).json(job);
-});
-// Cancelar download em andamento
-router.post('/:id/cancel', async (req, res) => {
-    const success = await queueService.cancelJob(req.params.id);
-    if (!success) {
-        res.status(404).json({ error: 'Download não encontrado ou já finalizado' });
-        return;
-    }
-    res.json({ success: true, message: 'Download cancelado com sucesso' });
-});
-// Remover download da lista
-router.delete('/:id', (req, res) => {
-    const success = queueService.deleteJob(req.params.id);
-    if (!success) {
-        res.status(404).json({ error: 'Download não encontrado' });
-        return;
-    }
-    res.json({ success: true });
-});
-export default router;
+import { OperationError } from '../services/error.service.js';
+import { asyncRoute } from '../utils/http.utils.js';
+export function createDownloadRouter(queue = queueService) {
+    const router = Router();
+    router.get('/', (_req, res) => res.json(queue.getSnapshot()));
+    router.get('/:id', (req, res) => {
+        const job = queue.getJob(req.params.id);
+        if (!job)
+            throw new OperationError('UNAVAILABLE', 'system', 'Job inexistente', 404);
+        res.json(job);
+    });
+    router.post('/', asyncRoute(async (req, res) => {
+        const parsed = CreateDownloadSchema.safeParse(req.body);
+        if (!parsed.success)
+            throw new OperationError('VALIDATION_ERROR', 'download', parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('\n'), 400);
+        const job = await queue.addJob(parsed.data);
+        res.status(201).json(job);
+    }));
+    router.post('/:id/cancel', asyncRoute(async (req, res) => {
+        if (!queue.getJob(req.params.id))
+            throw new OperationError('UNAVAILABLE', 'system', 'Job inexistente', 404);
+        if (!await queue.cancelJob(req.params.id))
+            throw new OperationError('CONFLICT', 'download', 'Job já finalizado', 409);
+        res.json({ success: true });
+    }));
+    router.delete('/:id', asyncRoute(async (req, res) => {
+        if (!await queue.deleteJob(req.params.id))
+            throw new OperationError('UNAVAILABLE', 'system', 'Job inexistente', 404);
+        res.json({ success: true });
+    }));
+    return router;
+}
+export default createDownloadRouter();

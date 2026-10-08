@@ -27,9 +27,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       setIsMaximized(Boolean(max));
     });
 
-    window.electronAPI.onMaximizeChange((max) => {
+    const unsubscribe = window.electronAPI.onMaximizeChange((max) => {
       setIsMaximized(max);
     });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [isElectron]);
 
   const handleMinimize = useCallback(() => {

@@ -1,27 +1,36 @@
 import { Router } from 'express';
 import { queueService } from '../services/queue.service.js';
-const router = Router();
-router.get('/', (req, res) => {
-    res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no', // Evita buffering caso haja proxy reverso
+import { OperationError } from '../services/error.service.js';
+export function createEventsRouter(queue = queueService) {
+    const router = Router();
+    let clients = 0;
+    router.get('/', (req, res) => {
+        if (clients >= 20)
+            throw new OperationError('CAPACITY', 'system', 'Limite de clientes SSE', 503);
+        clients++;
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+        res.write(': connected\n\n');
+        let closed = false;
+        const cleanup = () => {
+            if (closed)
+                return;
+            closed = true;
+            clients--;
+            clearInterval(heartbeat);
+            queue.off('event', onEvent);
+        };
+        const write = (data) => {
+            if (!closed && !res.write(data)) {
+                cleanup();
+                res.destroy();
+            }
+        };
+        const onEvent = (event) => write(`id: ${event.sequence}\ndata: ${JSON.stringify(event)}\n\n`);
+        const heartbeat = setInterval(() => write(': ping\n\n'), 20000);
+        queue.on('event', onEvent);
+        req.on('close', cleanup);
+        res.on('error', cleanup);
     });
-    // Envia comentário inicial para estabelecer conexão
-    res.write(': connected\n\n');
-    const onEvent = (data) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-    queueService.on('event', onEvent);
-    // Heartbeat a cada 20 segundos para evitar timeout do navegador
-    const heartbeat = setInterval(() => {
-        res.write(': ping\n\n');
-    }, 20000);
-    req.on('close', () => {
-        clearInterval(heartbeat);
-        queueService.off('event', onEvent);
-        res.end();
-    });
-});
-export default router;
+    return router;
+}
+export default createEventsRouter();

@@ -12,7 +12,7 @@ export interface ElectronAPI {
   maximizeWindow: () => Promise<void>;
   closeWindow: () => Promise<void>;
   isWindowMaximized: () => Promise<boolean>;
-  onMaximizeChange: (callback: (isMaximized: boolean) => void) => void;
+  onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void;
 }
 
 declare global {

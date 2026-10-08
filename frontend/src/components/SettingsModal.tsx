@@ -1,9 +1,15 @@
+import { openDownloadFolder, selectDownloadFolder } from '../utils/system.js';
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, Save, RotateCw, FolderOpen, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { SystemStatus } from '../types/download.js';
+import { AuthContextSchema, BrowserSchema, DialogResultSchema, SystemStatusSchema, type AuthContext } from '@ytdlp/shared';
+import { z } from 'zod';
+import { apiRequest, errorMessage } from '../utils/api.js';
 
 interface SettingsModalProps {
   isOpen: boolean;
+  auth: AuthContext;
+  onChangeAuth: (auth: AuthContext) => void;
   onClose: () => void;
   systemStatus: SystemStatus | null;
   onRefreshStatus: () => Promise<void>;
@@ -11,6 +17,8 @@ interface SettingsModalProps {
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
+  auth,
+  onChangeAuth,
   onClose,
   systemStatus,
   onRefreshStatus,
@@ -18,6 +26,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultDownloadDir, setDefaultDownloadDir] = useState('');
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(2);
   const [saving, setSaving] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthContext['mode']>('none');
+  const [browser, setBrowser] = useState('edge');
+  const [cookiesFile, setCookiesFile] = useState('');
   const [isBrowsingFolder, setIsBrowsingFolder] = useState(false);
   const [folderSelected, setFolderSelected] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
@@ -34,43 +45,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   }, []);
 
   useEffect(() => {
-    if (systemStatus) {
+    if (!isOpen) return;
+    setMessage(null);
+    setAuthMode(auth.mode);
+    if (auth.mode === 'browser') setBrowser(auth.browser);
+    if (auth.mode === 'file') setCookiesFile(auth.cookiesFile);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, auth]);
+
+  useEffect(() => {
+    if (systemStatus && isOpen) {
       setDefaultDownloadDir(systemStatus.config.defaultDownloadDir || '');
       setMaxConcurrentDownloads(systemStatus.config.maxConcurrentDownloads || 2);
     }
-  }, [systemStatus]);
+  }, [systemStatus, isOpen]);
 
   if (!isOpen) return null;
 
   const handleBrowseFolder = async () => {
     setIsBrowsingFolder(true);
     try {
-      const api = (window as any).electronAPI;
-      let selectedPath: string | null = null;
-
-      if (api?.selectFolder) {
-        const result = await api.selectFolder(defaultDownloadDir);
-        if (!result.cancelled && result.path) {
-          selectedPath = result.path;
-        }
-      } else {
-        const res = await fetch('/api/system/browse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'folder',
-            title: 'Selecione a pasta padrão de downloads',
-            defaultPath: defaultDownloadDir,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.path) {
-            selectedPath = data.path;
-          }
-        }
-      }
+      const selectedPath = await selectDownloadFolder(defaultDownloadDir);
 
       if (selectedPath) {
         setDefaultDownloadDir(selectedPath);
@@ -93,16 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!folderPath) return;
     setOpeningFolder(true);
     try {
-      const api = (window as any).electronAPI;
-      if (api?.openFolder) {
-        await api.openFolder(folderPath);
-      } else {
-        await fetch('/api/system/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderPath }),
-        });
-      }
+      await openDownloadFolder(folderPath);
     } catch (err) {
       console.error('Erro ao abrir pasta no explorador:', err);
     } finally {
@@ -125,24 +115,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setMessage(null);
 
     try {
-      const res = await fetch('/api/system/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          defaultDownloadDir: defaultDownloadDir.trim() || undefined,
-          maxConcurrentDownloads,
-        }),
+      const parsedAuth = AuthContextSchema.safeParse(authMode === 'browser' ? { mode: authMode, browser } : authMode === 'file' ? { mode: authMode, cookiesFile } : { mode: authMode });
+      if (!parsedAuth.success) throw new Error('Selecione um navegador ou informe o caminho absoluto do arquivo de cookies.');
+      await apiRequest('/api/system/config', z.object({ success: z.literal(true), config: SystemStatusSchema.shape.config }), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultDownloadDir: defaultDownloadDir.trim() || undefined, maxConcurrentDownloads }),
       });
-
-      if (res.ok) {
-        setMessage({ text: 'Configurações salvas com sucesso!', type: 'success' });
-        await onRefreshStatus();
-      } else {
-        const data = await res.json();
-        setMessage({ text: data.error || 'Erro ao salvar', type: 'error' });
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message || 'Erro de rede ao salvar', type: 'error' });
+      onChangeAuth(parsedAuth.data);
+      setMessage({ text: 'Configurações salvas; autenticação aplicada nesta sessão.', type: 'success' });
+      await onRefreshStatus();
+    } catch (err: unknown) {
+      setMessage({ text: errorMessage(err) || 'Erro de rede ao salvar', type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -161,7 +144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Configurações
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Ferramentas embutidas e preferências de download
+              Ferramentas, autenticação e preferências de download
             </p>
           </div>
           <button
@@ -195,7 +178,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-xs text-slate-500 leading-relaxed">
-              O <strong>yt-dlp</strong> e o <strong>FFmpeg</strong> vêm embutidos. O <strong>FFprobe</strong> é opcional e serve apenas para diagnóstico; se estiver no PATH, será detectado automaticamente.
+              O <strong>yt-dlp</strong> e o <strong>FFmpeg</strong> são necessários. O <strong>FFprobe</strong> é opcional. A origem detectada de cada ferramenta aparece abaixo.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
@@ -217,7 +200,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-500 font-mono truncate" title={systemStatus?.tools.ytdlp.version}>
                   {systemStatus?.tools.ytdlp.available
-                    ? `v${systemStatus.tools.ytdlp.version}`
+                    ? `v${systemStatus.tools.ytdlp.version} • ${systemStatus.tools.ytdlp.source}`
                     : 'Falha ao iniciar'}
                 </div>
               </div>
@@ -240,7 +223,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-600 font-medium leading-tight">
                   {systemStatus?.tools.ffmpeg.available
-                    ? 'Motor de Mídia Ativo'
+                    ? `Ativo • ${systemStatus.tools.ffmpeg.source}`
                     : 'Falha ao iniciar'}
                 </div>
               </div>
@@ -269,6 +252,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
+          <fieldset className="glass-pill rounded-2xl p-4 space-y-3">
+            <legend className="text-xs font-bold text-slate-800">Autenticação no site de origem</legend>
+            <p className="text-xs text-slate-500">Só é usada quando você escolhe uma opção. Vale para prévia e download nesta sessão e não é salva em disco. Uma sessão válida não garante acesso a todo conteúdo.</p>
+            <select className="glass-select w-full p-2 rounded-xl text-sm" value={authMode} onChange={e => setAuthMode(e.target.value as AuthContext['mode'])}>
+              <option value="none">Sem autenticação</option><option value="browser">Usar sessão do navegador</option><option value="file">Usar arquivo de cookies</option>
+            </select>
+            {authMode === 'browser' && <><select className="glass-select w-full p-2 rounded-xl text-sm" value={browser} onChange={e => setBrowser(e.target.value)}>{BrowserSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select><p className="text-xs text-slate-500">Faça login no site nesse navegador. O sistema pode impedir a leitura dos cookies; nesse caso use um arquivo Netscape exportado por você.</p></>}
+            {authMode === 'file' && <div className="flex gap-2"><input aria-label="Arquivo de cookies" className="glass-input min-w-0 flex-1 rounded-xl p-2 text-xs" value={cookiesFile} onChange={e => setCookiesFile(e.target.value)} placeholder="Caminho absoluto de cookies.txt (formato Netscape)" /><button type="button" className="glass-button px-3" onClick={async () => { try { const result = await apiRequest('/api/system/browse', DialogResultSchema, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'file', title: 'Selecione seu arquivo de cookies', filter: 'Cookies (*.txt)|*.txt' }) }); if (result.path) setCookiesFile(result.path); } catch (error) { setMessage({ text: errorMessage(error), type: 'error' }); } }}>Procurar</button></div>}
+          </fieldset>
           {/* Preferências de Download */}
           <div className="space-y-4">
             <div>
@@ -332,6 +324,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <option value={1}>1 processo por vez (Recomendado para conexões modestas)</option>
                 <option value={2}>2 processos concorrentes (Equilíbrio ideal)</option>
                 <option value={3}>3 processos concorrentes</option>
+                <option value={4}>4 processos concorrentes</option>
                 <option value={5}>5 processos concorrentes (Conexões ultrarrápidas)</option>
               </select>
             </div>

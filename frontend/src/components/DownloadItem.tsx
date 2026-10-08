@@ -1,3 +1,4 @@
+import { openDownloadFolder } from '../utils/system.js';
 import React, { useState } from 'react';
 import {
   Download,
@@ -14,7 +15,9 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { DownloadJob } from '../types/download.js';
+import type { DownloadStage } from '@ytdlp/shared';
 import { LogViewer } from './LogViewer.js';
+import { DiagnosticDetails } from './DiagnosticDetails.js';
 
 interface DownloadItemProps {
   job: DownloadJob;
@@ -26,6 +29,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
   const [showLogs, setShowLogs] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
+  const isCancelling = job.status === 'cancelling' || cancelling;
   const isActive = job.status === 'downloading' || job.status === 'processing';
   const isQueued = job.status === 'queued';
   const isCompleted = job.status === 'completed';
@@ -34,16 +38,10 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
 
   const handleOpenFolder = async () => {
     try {
-      const api = (window as any).electronAPI;
-      if (api?.openFolder) {
-        await api.openFolder(job.options.outputDir);
-      } else {
-        await fetch('/api/system/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderPath: job.options.outputDir }),
-        });
-      }
+      const targetFolder = job.outputPath || job.options.outputDir;
+      if (!targetFolder) return;
+
+      await openDownloadFolder(targetFolder);
     } catch (err) {
       console.error('Erro ao abrir pasta no explorador:', err);
     }
@@ -55,7 +53,7 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
     setCancelling(false);
   };
 
-  const getStageLabel = (stage: string) => {
+  const getStageLabel = (stage: DownloadStage) => {
     switch (stage) {
       case 'downloading':
         return 'Baixando stream';
@@ -67,6 +65,8 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
         return 'Pós-processamento';
       case 'completed':
         return 'Concluído';
+      case 'cancelling':
+        return 'Cancelando...';
       case 'cancelled':
         return 'Cancelado';
       case 'error':
@@ -141,19 +141,19 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
               <span>Logs</span>
             </button>
 
-            {(isActive || isQueued) && (
+            {(isActive || isQueued || isCancelling) && (
               <button
                 type="button"
                 onClick={handleCancel}
-                disabled={cancelling}
-                className="flex items-center gap-1 text-xs px-3 py-1.5 glass-button-danger font-medium cursor-pointer"
+                disabled={isCancelling}
+                className="flex items-center gap-1 text-xs px-3 py-1.5 glass-button-danger font-medium cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Ban className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>Cancelar</span>
+                <span>{isCancelling ? 'Cancelando...' : 'Cancelar'}</span>
               </button>
             )}
 
-            {isCompleted && (
+            {(isCompleted || job.outputFiles.length > 0) && (
               <button
                 type="button"
                 onClick={handleOpenFolder}
@@ -244,11 +244,12 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDel
           )}
         </div>
 
+        {job.outputFiles.length > 0 && <p className="mt-3 text-xs text-slate-500">{job.outputFiles.length} arquivo(s) salvo(s).</p>}
         {/* Mensagem de Erro */}
         {job.error && (
           <div className="mt-3 p-2.5 rounded-xl glass-pill !bg-rose-50/50 !border-rose-200/40 text-rose-600 text-xs flex items-start gap-2">
             <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" strokeWidth={1.5} />
-            <span className="break-all font-mono text-[11px]">{job.error}</span>
+            <span className="break-all font-mono text-[11px]">{job.error}<DiagnosticDetails id={job.errorDetails?.diagnosticId} /></span>
           </div>
         )}
       </div>

@@ -11,19 +11,24 @@ import {
 } from './types/download.js';
 import { ListFilter, AlertTriangle } from 'lucide-react';
 import { normalizeMediaUrl } from './utils/url.js';
+import { AuthContextSchema, SystemStatusSchema, VideoMetadataSchema, DownloadJobSchema, type AuthContext } from '@ytdlp/shared';
+import { apiRequest, ApiFailure, errorMessage } from './utils/api.js';
 
 export const App: React.FC = () => {
   const [url, setUrl] = useState('');
+  const [auth, setAuth] = useState<AuthContext>({ mode: 'none' });
+  const [authRevision, setAuthRevision] = useState(0);
+  const [actionDiagnosticId, setActionDiagnosticId] = useState<string>();
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [isStartingDownload, setIsStartingDownload] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // embedThumbnail desativado por padrão conforme solicitado pelo usuário
-  const [downloadOptions, setDownloadOptions] = useState<CreateDownloadPayload>({
-    url: '',
+  const [downloadOptions, setDownloadOptions] = useState<Omit<CreateDownloadPayload, 'url'>>({
     mode: 'video',
     videoResolution: '1080p',
     videoContainer: 'mp4',
@@ -34,9 +39,10 @@ export const App: React.FC = () => {
     embedSubtitles: false,
   });
 
-  const { jobs, connected, cancelJob, deleteJob } = useDownloadEvents();
+  const { jobs, connected, cancelJob, deleteJob, operationError } = useDownloadEvents();
   const abortControllerRef = useRef<AbortController | null>(null);
   const metadataRequestIdRef = useRef(0);
+  useEffect(() => () => { metadataRequestIdRef.current++; abortControllerRef.current?.abort(); }, []);
 
   // ── Electron: rastrear IDs de downloads já notificados ──
   const notifiedJobIdsRef = useRef<Set<string>>(new Set());
@@ -45,21 +51,23 @@ export const App: React.FC = () => {
   // Busca status do sistema ao carregar
   const fetchSystemStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/system/check');
-      if (res.ok) {
-        const data: SystemStatus = await res.json();
+      {
+        const data: SystemStatus = await apiRequest('/api/system/check', SystemStatusSchema);
         setSystemStatus(data);
-        if (!downloadOptions.outputDir) {
-          setDownloadOptions((prev) => ({
-            ...prev,
-            outputDir: data.config.defaultDownloadDir,
-          }));
-        }
+        setDownloadOptions((prev) => {
+          if (!prev.outputDir) {
+            return {
+              ...prev,
+              outputDir: data.config.defaultDownloadDir,
+            };
+          }
+          return prev;
+        });
       }
     } catch (err) {
       console.error('Falha ao checar status do sistema:', err);
     }
-  }, [downloadOptions.outputDir]);
+  }, []);
 
   useEffect(() => {
     fetchSystemStatus();
@@ -68,7 +76,7 @@ export const App: React.FC = () => {
   // Consulta metadados de vídeo da URL com cancelamento automático de requisição anterior
   const handleFetchMetadata = useCallback(async (targetUrl: string) => {
     const normalized = normalizeMediaUrl(targetUrl);
-    if (!normalized) return;
+    if (!normalized) return false;
 
     // Cancela requisição anterior se o usuário tiver digitado ou colado outro link
     if (abortControllerRef.current) {
@@ -80,41 +88,40 @@ export const App: React.FC = () => {
 
     setIsLoadingMetadata(true);
     setActionError(null);
+    setActionDiagnosticId(undefined);
+    setMetadata(null);
 
     try {
-      const res = await fetch('/api/info', {
+      const data: VideoMetadata = await apiRequest('/api/info', VideoMetadataSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: normalized }),
+        body: JSON.stringify({ url: normalized, auth }),
         signal: controller.signal,
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Falha ao buscar metadados');
-      }
 
-      const data: VideoMetadata = await res.json();
-      if (metadataRequestIdRef.current !== requestId) return;
+      if (metadataRequestIdRef.current !== requestId) return false;
       setMetadata(data);
       setDownloadOptions((prev) => ({
         ...prev,
-        url: normalized,
-        videoResolution: data.availableResolutions[0] ? (data.availableResolutions[0] as any) : '1080p',
+        videoResolution: prev.videoResolution || '1080p',
       }));
-    } catch (err: any) {
-      if (err.name === 'AbortError' || metadataRequestIdRef.current !== requestId) {
-        return; // Requisição cancelada intencionalmente por uma nova
+      return true;
+    } catch (err: unknown) {
+      if ((err instanceof Error && err.name === 'AbortError') || metadataRequestIdRef.current !== requestId) {
+        return false; // Requisição cancelada intencionalmente por uma nova
       }
-      setActionError(err.message || 'Erro ao conectar ou ler URL');
+      setActionError(errorMessage(err));
+      setActionDiagnosticId(err instanceof ApiFailure ? err.details.diagnosticId : undefined);
       setMetadata(null);
+      return false;
     } finally {
       if (abortControllerRef.current === controller) {
         setIsLoadingMetadata(false);
         abortControllerRef.current = null;
       }
     }
-  }, []);
+  }, [auth]);
 
   const handleCancelMetadata = useCallback(() => {
     metadataRequestIdRef.current += 1;
@@ -133,7 +140,7 @@ export const App: React.FC = () => {
 
   // Inicia o download
   const handleStartDownload = async () => {
-    const rawUrl = url.trim() || downloadOptions.url;
+    const rawUrl = url.trim();
     if (!rawUrl) {
       setActionError('Por favor, informe uma URL válida.');
       return;
@@ -142,6 +149,7 @@ export const App: React.FC = () => {
     const targetUrl = normalizeMediaUrl(rawUrl);
     setIsStartingDownload(true);
     setActionError(null);
+    setActionDiagnosticId(undefined);
 
     try {
       const payload: CreateDownloadPayload = {
@@ -149,16 +157,13 @@ export const App: React.FC = () => {
         url: targetUrl,
       };
 
-      const res = await fetch('/api/downloads', {
+      await apiRequest('/api/downloads', DownloadJobSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, title: metadata?.title }),
+        body: JSON.stringify({ ...payload, title: metadata?.url === targetUrl ? metadata.title : undefined, auth }),
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Erro ao iniciar download');
-      }
+
 
       // Limpa os campos após enfileirar
       handleCancelMetadata();
@@ -166,11 +171,11 @@ export const App: React.FC = () => {
       setMetadata(null);
       setDownloadOptions((prev) => ({
         ...prev,
-        url: '',
         customFilename: '',
       }));
-    } catch (err: any) {
-      setActionError(err.message || 'Falha ao enfileirar download');
+    } catch (err: unknown) {
+      setActionError(errorMessage(err));
+      setActionDiagnosticId(err instanceof ApiFailure ? err.details.diagnosticId : undefined);
     } finally {
       setIsStartingDownload(false);
     }
@@ -178,7 +183,7 @@ export const App: React.FC = () => {
 
   // ── Electron: notificação nativa quando um download é concluído ──
   useEffect(() => {
-    const api = (window as any).electronAPI;
+    const api = window.electronAPI;
 
     if (initialLoadRef.current) {
       // Primeira renderização: registra jobs já finalizados (sem notificar)
@@ -201,7 +206,11 @@ export const App: React.FC = () => {
     }
   }, [jobs]);
 
-  const activeJobs = jobs.filter((j) => j.status === 'downloading' || j.status === 'processing');
+  const activeJobs = jobs.filter((j) => ['downloading', 'processing', 'cancelling'].includes(j.status));
+  useEffect(() => {
+    const retained = new Set(jobs.map(j => j.id));
+    for (const id of notifiedJobIdsRef.current) if (!retained.has(id)) notifiedJobIdsRef.current.delete(id);
+  }, [jobs]);
 
   // Determina se deve usar layout split (quando há conteúdo na coluna direita)
   const hasContent = url || metadata || jobs.length > 0;
@@ -254,23 +263,22 @@ export const App: React.FC = () => {
 
             {/* Cartão Unificado: Entrada de URL, Prévia e Opções integradas sem vão vazio */}
             <DownloaderCard
+                key={authRevision}
+                diagnosticId={actionDiagnosticId}
               url={url}
-              onChangeUrl={(val) => {
-                setUrl(val);
-                setDownloadOptions((prev) => ({ ...prev, url: val }));
-              }}
+              onChangeUrl={(val) => { if (val !== url) handleCancelMetadata(); setUrl(val); }}
               onFetchMetadata={handleFetchMetadata}
               onCancelMetadata={handleCancelMetadata}
               isLoadingMetadata={isLoadingMetadata}
               metadata={metadata}
               onClearMetadata={handleClearMetadata}
-              options={{ ...downloadOptions, url: url || downloadOptions.url }}
-              onChangeOptions={setDownloadOptions}
-              defaultFolder={systemStatus?.config.defaultDownloadDir || 'Downloads'}
+              options={{ ...downloadOptions, url }}
+              onChangeOptions={({ url: _ignoredUrl, ...options }) => setDownloadOptions(options)}
+              defaultFolder={systemStatus?.config.defaultDownloadDir || ''}
               onStartDownload={handleStartDownload}
               isStartingDownload={isStartingDownload}
-              actionError={actionError}
-              onDismissError={() => setActionError(null)}
+              actionError={actionError || operationError}
+              onDismissError={() => { setActionError(null); setActionDiagnosticId(undefined); }}
             />
           </div>
 
@@ -311,7 +319,7 @@ export const App: React.FC = () => {
       <footer className="relative z-10 border-t border-white/20 py-3 text-center text-xs text-slate-600 font-medium">
         <p>
           yt-dlp GUI • Orquestração local segura com Node.js, Express &amp; FFmpeg
-          {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
+          {typeof window !== 'undefined' && window.electronAPI?.isElectron && (
             <span className="ml-1 text-slate-500 font-semibold">• Desktop</span>
           )}
         </p>
@@ -319,8 +327,10 @@ export const App: React.FC = () => {
 
       {/* ── Modal de Configurações ── */}
       <SettingsModal
+        auth={auth}
+        onChangeAuth={(value) => { handleCancelMetadata(); setActionError(null); setActionDiagnosticId(undefined); setAuth(AuthContextSchema.parse(value)); setAuthRevision(prev => prev + 1); }}
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={closeSettings}
         systemStatus={systemStatus}
         onRefreshStatus={fetchSystemStatus}
       />

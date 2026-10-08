@@ -39,7 +39,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isWindowMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-is-maximized'),
 
   /** Registra listener para alterações de estado de maximização da janela */
-  onMaximizeChange: (callback: (isMaximized: boolean) => void): void => {
-    ipcRenderer.on('window-maximized-change', (_event, isMax) => callback(isMax));
+  onMaximizeChange: (callback: (isMaximized: boolean) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isMax: boolean) => callback(isMax);
+    ipcRenderer.on('window-maximized-change', handler);
+    return () => {
+      ipcRenderer.removeListener('window-maximized-change', handler);
+    };
   },
 });

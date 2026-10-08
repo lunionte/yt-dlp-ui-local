@@ -1,258 +1,115 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
-import fs from 'node:fs';
-import path from 'node:path';
-const execFileAsync = promisify(execFile);
-let isDialogActive = false;
-/**
- * Abre o seletor nativo do sistema operacional (Windows, macOS ou Linux).
- * No Electron, usa dialog.showOpenDialog() nativo (~0ms) em vez de PowerShell (~500ms+).
- */
-export async function selectPathViaDialog(options) {
-    if (isDialogActive) {
-        return {
-            path: null,
-            cancelled: true,
-            error: 'Um diálogo de seleção já está aberto no computador.',
-        };
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import { BrowseSchema, DialogResultSchema } from '@ytdlp/shared';
+import { executeBuffered } from './runner.service.js';
+import { OperationError } from './error.service.js';
+import { requireDirectory } from './path.service.js';
+let active = false;
+export function buildUnixDialogCommands(platform, options) {
+    const title = options.title || 'Selecione um caminho';
+    const initial = options.defaultPath || '.';
+    if (platform === 'darwin') {
+        const literal = '"' + title.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]/g, ' ') + '"';
+        return [{ binaryPath: 'osascript', args: ['-e', `POSIX path of (choose ${options.type === 'folder' ? 'folder' : 'file'} with prompt ${literal})`] }];
     }
-    isDialogActive = true;
-    const isFolder = options.type === 'folder';
-    const title = options.title || (isFolder ? 'Selecione a pasta' : 'Selecione o arquivo executável');
-    const initialPath = options.defaultPath ? path.resolve(options.defaultPath) : '';
-    const filter = options.filter || (isFolder ? '' : 'Executáveis (*.exe)|*.exe|Todos os arquivos (*.*)|*.*');
+    return [
+        { binaryPath: 'zenity', args: ['--file-selection', ...(options.type === 'folder' ? ['--directory'] : []), '--title', title, '--filename', initial] },
+        { binaryPath: 'kdialog', args: ['--title', title, options.type === 'folder' ? '--getexistingdirectory' : '--getopenfilename', initial] },
+    ];
+}
+async function windowsDialog(options) {
+    const encode = (value) => Buffer.from(value, 'utf8').toString('base64');
+    // User text is decoded as data. It never participates in PowerShell source syntax.
+    const script = `
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$titleText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(options.title || 'Selecione um caminho')}'))
+$initialPath = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(options.defaultPath || '')}'))
+$filterText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(options.filter || 'Todos os arquivos (*.*)|*.*')}'))
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.Opacity = 0
+$owner.ShowInTaskbar = $false
+$picker = New-Object System.Windows.Forms.${options.type === 'folder' ? 'FolderBrowserDialog' : 'OpenFileDialog'}
+try {
+  ${options.type === 'folder' ? '$picker.Description = $titleText; $picker.ShowNewFolderButton = $true; if ($initialPath) { $picker.SelectedPath = $initialPath }' : '$picker.Title = $titleText; $picker.Filter = $filterText; if ($initialPath) { if (Test-Path -LiteralPath $initialPath -PathType Container) { $picker.InitialDirectory = $initialPath } else { $picker.InitialDirectory = [IO.Path]::GetDirectoryName($initialPath); $picker.FileName = [IO.Path]::GetFileName($initialPath) } }'}
+  $owner.Show()
+  if ($picker.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $picker.${options.type === 'folder' ? 'SelectedPath' : 'FileName'}
+  }
+} finally { $picker.Dispose(); $owner.Dispose() }
+`;
+    const result = await executeBuffered({ binaryPath: 'powershell.exe', args: ['-NoProfile', '-NoLogo', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], timeoutMs: 120000, maxBuffer: 1024 * 1024 });
+    return { path: result.stdout.trim() || null, cancelled: !result.stdout.trim() };
+}
+async function electronDialog(options) {
+    const moduleName = 'electron';
+    const native = await import(moduleName);
+    const filters = [];
+    const parts = (options.filter || '').split('|');
+    for (let i = 0; i + 1 < parts.length; i += 2)
+        filters.push({ name: parts[i], extensions: parts[i + 1].split(';').map(p => p.replace('*.', '').trim()) });
+    const parent = native.BrowserWindow.getFocusedWindow() || native.BrowserWindow.getAllWindows()[0];
+    const result = await native.dialog.showOpenDialog(parent, { title: options.title, defaultPath: options.defaultPath, properties: options.type === 'folder' ? ['openDirectory', 'createDirectory'] : ['openFile'], filters: filters.length ? filters : undefined });
+    return { path: result.filePaths[0] || null, cancelled: result.canceled || !result.filePaths.length };
+}
+export async function selectPathViaDialog(input) {
+    if (active)
+        throw new OperationError('CONFLICT', 'system', 'Já existe um diálogo aberto', 409);
+    const parsed = BrowseSchema.safeParse(input);
+    if (!parsed.success)
+        throw new OperationError('VALIDATION_ERROR', 'system', 'Opções inválidas', 400);
+    const options = parsed.data;
+    if (options.defaultPath) {
+        try {
+            await fs.stat(options.defaultPath);
+        }
+        catch {
+            throw new OperationError('FILESYSTEM_ERROR', 'system', 'Caminho inicial inexistente', 400);
+        }
+    }
+    active = true;
     try {
-        // Electron: usa diálogo nativo se disponível no ambiente
-        if (process.env.ELECTRON) {
-            try {
-                return await selectPathElectron({ isFolder, title, initialPath, filter });
-            }
-            catch (e) {
-                console.warn('[Dialog] Falha ao importar electron nativo, usando fallback do SO:', e);
-            }
-        }
-        const platform = process.platform;
-        if (platform === 'win32') {
-            return await selectPathWindows({ isFolder, title, initialPath, filter });
-        }
-        else if (platform === 'darwin') {
-            return await selectPathMacOS({ isFolder, title, initialPath });
-        }
+        let result;
+        if (process.env.ELECTRON)
+            result = await electronDialog(options);
+        else if (process.platform === 'win32')
+            result = await windowsDialog(options);
         else {
-            return await selectPathLinux({ isFolder, title, initialPath });
+            result = { path: null, cancelled: true };
+            const commands = buildUnixDialogCommands(process.platform === 'darwin' ? 'darwin' : 'linux', options);
+            for (const command of commands) {
+                try {
+                    const output = await executeBuffered({ ...command, timeoutMs: 120000, maxBuffer: 1024 * 1024 });
+                    result = { path: output.stdout.trim() || null, cancelled: !output.stdout.trim() };
+                    break;
+                }
+                catch (error) {
+                    const failure = error;
+                    if (failure.code === 'ENOENT')
+                        continue;
+                    if (failure.exitCode === 1 || /User canceled|(-128)/i.test(failure.message))
+                        break;
+                    throw error;
+                }
+            }
         }
-    }
-    catch (err) {
-        console.error('Erro ao abrir diálogo de seleção:', err);
-        return {
-            path: null,
-            cancelled: true,
-            error: err.message || 'Falha ao abrir diálogo do sistema operacional',
-        };
+        result = DialogResultSchema.parse(result);
+        if (result.path && options.type === 'folder')
+            result.path = await requireDirectory(result.path);
+        return result;
     }
     finally {
-        isDialogActive = false;
+        active = false;
     }
 }
-/**
- * Electron: Usa dialog.showOpenDialog() nativo via dynamic import.
- * Instantâneo, sem spawn de processos, sem encoding issues.
- */
-async function selectPathElectron(opts) {
-    // Dynamic import para evitar erro de compilação no backend standalone (sem electron types)
-    const electronModule = 'electron';
-    const { dialog, BrowserWindow } = await import(electronModule);
-    const parentWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || undefined;
-    // Converter filtro no formato PowerShell (Name (*.ext)|*.ext) para formato Electron
-    const filters = [];
-    if (!opts.isFolder && opts.filter) {
-        const parts = opts.filter.split('|');
-        for (let i = 0; i < parts.length - 1; i += 2) {
-            const name = parts[i].trim();
-            const pattern = parts[i + 1].trim();
-            const extensions = pattern.split(';').map((p) => p.replace('*.', '').trim()).filter(Boolean);
-            if (extensions.length > 0) {
-                filters.push({ name, extensions });
-            }
-        }
-    }
-    const result = await dialog.showOpenDialog(parentWindow, {
-        title: opts.title,
-        defaultPath: opts.initialPath || undefined,
-        properties: opts.isFolder
-            ? ['openDirectory', 'createDirectory']
-            : ['openFile'],
-        filters: filters.length > 0 ? filters : undefined,
+export async function openFolderInExplorer(input) {
+    const target = await requireDirectory(input);
+    const binary = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    // Launching the user's file manager is independent of download subprocess ownership.
+    return new Promise((resolve, reject) => {
+        const child = spawn(binary, [target], { shell: false, windowsHide: true, detached: true, stdio: 'ignore' });
+        child.once('error', reject);
+        child.once('spawn', () => { child.unref(); resolve({ success: true }); });
     });
-    if (result.canceled || result.filePaths.length === 0) {
-        return { path: null, cancelled: true };
-    }
-    return { path: result.filePaths[0], cancelled: false };
-}
-/**
- * Windows: Executa PowerShell com System.Windows.Forms em modo STA otimizado
- */
-async function selectPathWindows(opts) {
-    const titleB64 = Buffer.from(opts.title, 'utf-8').toString('base64');
-    const pathB64 = Buffer.from(opts.initialPath, 'utf-8').toString('base64');
-    const filterB64 = Buffer.from(opts.filter, 'utf-8').toString('base64');
-    const script = opts.isFolder
-        ? `
-Add-Type -AssemblyName System.Windows.Forms
-$form = New-Object System.Windows.Forms.Form
-$form.TopMost = $true
-$form.TopLevel = $true
-$form.Opacity = 0
-$form.ShowInTaskbar = $false
-$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-
-$title = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${titleB64}'))
-$initPath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${pathB64}'))
-
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = $title
-$dialog.ShowNewFolderButton = $true
-$dialog.AutoUpgradeEnabled = $true
-
-if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
-    $dialog.SelectedPath = $initPath
-}
-
-$form.Show()
-$form.Activate()
-$form.BringToFront()
-$result = $dialog.ShowDialog($form)
-
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    Write-Output $dialog.SelectedPath
-}
-
-$form.Dispose()
-$dialog.Dispose()
-[System.Environment]::Exit(0)
-`.trim()
-        : `
-Add-Type -AssemblyName System.Windows.Forms
-$form = New-Object System.Windows.Forms.Form
-$form.TopMost = $true
-$form.TopLevel = $true
-$form.Opacity = 0
-$form.ShowInTaskbar = $false
-$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-
-$title = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${titleB64}'))
-$initPath = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${pathB64}'))
-$filter = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${filterB64}'))
-
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = $title
-$dialog.Filter = $filter
-$dialog.AutoUpgradeEnabled = $true
-
-if ($initPath -ne '' -and (Test-Path -LiteralPath $initPath)) {
-    if (Test-Path -LiteralPath $initPath -PathType Container) {
-        $dialog.InitialDirectory = $initPath
-    } else {
-        $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($initPath)
-        $dialog.FileName = [System.IO.Path]::GetFileName($initPath)
-    }
-}
-
-$form.Show()
-$form.Activate()
-$form.BringToFront()
-$result = $dialog.ShowDialog($form)
-
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    Write-Output $dialog.FileName
-}
-
-$form.Dispose()
-$dialog.Dispose()
-[System.Environment]::Exit(0)
-`.trim();
-    const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NoLogo', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
-        timeout: 120000,
-    });
-    const selected = stdout.trim();
-    if (!selected) {
-        return { path: null, cancelled: true };
-    }
-    return { path: selected, cancelled: false };
-}
-/**
- * macOS: Usa osascript (AppleScript)
- */
-async function selectPathMacOS(opts) {
-    const prompt = opts.title.replace(/"/g, '\\"');
-    let cmd = '';
-    if (opts.isFolder) {
-        cmd = `osascript -e 'POSIX path of (choose folder with prompt "${prompt}")'`;
-    }
-    else {
-        cmd = `osascript -e 'POSIX path of (choose file with prompt "${prompt}")'`;
-    }
-    try {
-        const { stdout } = await execFileAsync('/bin/sh', ['-c', cmd], { timeout: 120000 });
-        const selected = stdout.trim();
-        if (!selected) {
-            return { path: null, cancelled: true };
-        }
-        return { path: selected, cancelled: false };
-    }
-    catch {
-        return { path: null, cancelled: true };
-    }
-}
-/**
- * Linux: Tenta zenity ou kdialog
- */
-async function selectPathLinux(opts) {
-    let cmd = '';
-    if (opts.isFolder) {
-        cmd = `zenity --file-selection --directory --title="${opts.title}" 2>/dev/null || kdialog --getexistingdirectory "${opts.initialPath || '.'}" 2>/dev/null`;
-    }
-    else {
-        cmd = `zenity --file-selection --title="${opts.title}" 2>/dev/null || kdialog --getopenfilename "${opts.initialPath || '.'}" 2>/dev/null`;
-    }
-    try {
-        const { stdout } = await execFileAsync('/bin/sh', ['-c', cmd], { timeout: 120000 });
-        const selected = stdout.trim();
-        if (!selected) {
-            return { path: null, cancelled: true };
-        }
-        return { path: selected, cancelled: false };
-    }
-    catch {
-        return { path: null, cancelled: true };
-    }
-}
-/**
- * Abre uma pasta no gerenciador de arquivos padrão do sistema operacional (Windows Explorer, Finder, etc.)
- */
-export async function openFolderInExplorer(folderPath) {
-    try {
-        const target = path.resolve(folderPath);
-        // Se o diretório não existir, cria-o antes de abrir
-        if (!fs.existsSync(target)) {
-            fs.mkdirSync(target, { recursive: true });
-        }
-        if (process.platform === 'win32') {
-            spawn('explorer.exe', [target], { detached: true, stdio: 'ignore' }).unref();
-        }
-        else if (process.platform === 'darwin') {
-            spawn('open', [target], { detached: true, stdio: 'ignore' }).unref();
-        }
-        else {
-            spawn('xdg-open', [target], { detached: true, stdio: 'ignore' }).unref();
-        }
-        return { success: true };
-    }
-    catch (err) {
-        console.error('Erro ao abrir pasta no explorador:', err);
-        return { success: false, error: err.message || 'Não foi possível abrir a pasta' };
-    }
 }

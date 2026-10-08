@@ -1,268 +1,218 @@
 import path from 'node:path';
-import fs from 'node:fs';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { loadConfig } from '../config/paths.js';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import { z } from 'zod';
+import { normalizeMediaUrl, VideoMetadataSchema } from '@ytdlp/shared';
+import { loadConfig, verifyBinaryIntegrity } from '../config/paths.js';
+import { executeBuffered } from './runner.service.js';
+import { classifyFailure, OperationError, redactDiagnostic } from './error.service.js';
+import { requireCookieFile } from './path.service.js';
 import { PROGRESS_PREFIX } from './parser.service.js';
-import { normalizeMediaUrl } from '../utils/url.utils.js';
-const execFileAsync = promisify(execFile);
-const metadataCache = new Map();
-const inFlightFetches = new Map();
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
-const MAX_CONCURRENT_METADATA_FETCHES = 2;
-let activeMetadataFetches = 0;
-const metadataWaiters = [];
-function createAbortError() {
-    const error = new Error('Consulta de metadados cancelada');
-    error.name = 'AbortError';
-    return error;
-}
-function acquireMetadataSlot(signal) {
-    if (signal.aborted)
-        return Promise.reject(createAbortError());
-    return new Promise((resolve, reject) => {
-        const start = (release) => {
-            signal.removeEventListener('abort', onAbort);
-            resolve(release);
-        };
-        const onAbort = () => {
-            const index = metadataWaiters.findIndex((waiter) => waiter.onAbort === onAbort);
-            if (index !== -1)
-                metadataWaiters.splice(index, 1);
-            reject(createAbortError());
-        };
-        if (activeMetadataFetches < MAX_CONCURRENT_METADATA_FETCHES) {
-            activeMetadataFetches += 1;
-            start(() => releaseMetadataSlot());
-            return;
-        }
-        signal.addEventListener('abort', onAbort, { once: true });
-        metadataWaiters.push({ signal, start, reject, onAbort });
+const entrySchema = z.object({
+    id: z.union([z.string(), z.number()]).optional(), title: z.string().nullish(), thumbnail: z.string().nullish(),
+    duration: z.number().finite().nonnegative().nullish(), duration_string: z.string().nullish(), uploader: z.string().nullish(),
+    channel: z.string().nullish(), description: z.string().nullish(), extractor_key: z.string().nullish(), extractor: z.string().nullish(),
+    formats: z.array(z.object({ height: z.number().finite().nonnegative().nullish(), vcodec: z.string().nullish() }).passthrough()).nullish(),
+}).passthrough();
+const extractionSchema = entrySchema.extend({ _type: z.string().optional(), entries: z.array(entrySchema.nullable()).max(100, 'A coleção excede o limite de 100 mídias').nullish() });
+export function parseMetadata(stdout, url, stderr = '') {
+    let raw;
+    try {
+        raw = JSON.parse(stdout);
+    }
+    catch {
+        throw new OperationError('EXTRACTOR_ERROR', 'metadata', 'JSON inválido retornado pelo yt-dlp', 502);
+    }
+    const parsed = extractionSchema.safeParse(raw);
+    if (!parsed.success)
+        throw new OperationError('EXTRACTOR_ERROR', 'metadata', 'Estrutura de metadados inválida ou coleção acima de 100 entradas', 502);
+    const data = parsed.data;
+    const mapEntry = (item) => ({
+        id: String(item.id ?? 'unknown'), title: (item.title || 'Sem título').slice(0, 500),
+        thumbnail: item.thumbnail || undefined, duration: item.duration ?? undefined,
+        durationString: item.duration_string || undefined, uploader: item.uploader || item.channel || undefined,
+        description: item.description?.slice(0, 300) || undefined, extractor: item.extractor_key || item.extractor || undefined,
+        availableResolutions: [...new Set((item.formats || []).filter(f => f.height && f.vcodec && f.vcodec !== 'none').map(f => `${f.height}p`))].sort((a, b) => parseInt(b) - parseInt(a)),
+    });
+    const collection = data._type === 'playlist' || !!data.entries;
+    if (!collection && data.id === undefined)
+        throw new OperationError('EXTRACTOR_ERROR', 'metadata', 'Vídeo sem identificador válido', 502);
+    const entries = collection ? (data.entries || []).filter((e) => e !== null).map(mapEntry) : [];
+    if (collection && !entries.length)
+        throw new OperationError('UNAVAILABLE', 'metadata', 'Coleção sem mídia acessível', 502);
+    const root = mapEntry(data);
+    return VideoMetadataSchema.parse({
+        ...root, url, kind: collection ? 'collection' : 'video', entries,
+        thumbnail: root.thumbnail || entries[0]?.thumbnail,
+        availableResolutions: collection ? [...new Set(entries.flatMap(e => e.availableResolutions))].sort((a, b) => parseInt(b) - parseInt(a)) : root.availableResolutions,
+        warnings: stderr.split(/\r?\n/).filter(line => /warning:/i.test(line)).slice(-20).map(redactDiagnostic),
     });
 }
-function releaseMetadataSlot() {
-    while (metadataWaiters.length > 0) {
-        const waiter = metadataWaiters.shift();
-        waiter.signal.removeEventListener('abort', waiter.onAbort);
-        if (waiter.signal.aborted) {
-            waiter.reject(createAbortError());
-            continue;
-        }
-        waiter.start(() => releaseMetadataSlot());
-        return;
-    }
-    activeMetadataFetches = Math.max(0, activeMetadataFetches - 1);
+export function buildAccessArgs(auth) {
+    if (auth.mode === 'browser')
+        return ['--cookies-from-browser', auth.browser];
+    if (auth.mode === 'file')
+        return ['--cookies', auth.cookiesFile];
+    return [];
 }
-function subscribeToFetch(entry, signal) {
+export function buildMetadataArgs(url, auth) {
+    return ['--ignore-config', '--no-cache-dir', '--dump-single-json', '--no-playlist', '--skip-download', '--socket-timeout', '10', ...buildAccessArgs(auth), '--', normalizeMediaUrl(url)];
+}
+export async function validateAuthContext(auth) {
+    return auth.mode === 'file' ? { ...auth, cookiesFile: await requireCookieFile(auth.cookiesFile) } : auth;
+}
+async function cacheKey(url, auth) {
+    // The cache stores only an opaque digest, never cookie data.
+    let fileVersion = '';
+    if (auth.mode === 'file') {
+        const stat = await fs.stat(auth.cookiesFile);
+        fileVersion = `${stat.mtimeMs}:${stat.size}`;
+    }
+    return crypto.createHash('sha256').update(JSON.stringify([url, auth, fileVersion])).digest('hex');
+}
+const cache = new Map();
+const pending = new Map();
+const waiting = [];
+let active = 0, stopping = false;
+function abortError() { return Object.assign(new Error('Consulta cancelada'), { name: 'AbortError' }); }
+function acquire(signal) {
+    if (signal.aborted)
+        return Promise.reject(abortError());
+    if (waiting.length >= 20)
+        return Promise.reject(new OperationError('CAPACITY', 'metadata', 'Limite de espera de metadados', 503));
+    return new Promise((resolve, reject) => {
+        const release = () => {
+            active--;
+            const next = waiting.shift();
+            if (next) {
+                next.signal.removeEventListener('abort', next.abort);
+                next.start();
+            }
+        };
+        const start = () => { active++; resolve(release); };
+        const abort = () => { const index = waiting.findIndex(w => w.abort === abort); if (index >= 0)
+            waiting.splice(index, 1); reject(abortError()); };
+        if (active < 2)
+            start();
+        else {
+            signal.addEventListener('abort', abort, { once: true });
+            waiting.push({ start, reject, signal, abort });
+        }
+    });
+}
+function subscribe(entry, signal) {
     if (signal?.aborted)
-        return Promise.reject(createAbortError());
-    entry.consumers += 1;
+        return Promise.reject(abortError());
+    entry.consumers++;
     return new Promise((resolve, reject) => {
         let finished = false;
         const finish = (callback) => {
             if (finished)
                 return;
             finished = true;
-            signal?.removeEventListener('abort', onAbort);
-            entry.consumers = Math.max(0, entry.consumers - 1);
-            if (!entry.settled && entry.consumers === 0)
+            signal?.removeEventListener('abort', abort);
+            entry.consumers--;
+            if (!entry.settled && !entry.consumers)
                 entry.controller.abort();
             callback();
         };
-        const onAbort = () => finish(() => reject(createAbortError()));
-        signal?.addEventListener('abort', onAbort, { once: true });
-        entry.promise.then((data) => finish(() => resolve(data)), (error) => finish(() => reject(error)));
+        const abort = () => finish(() => reject(abortError()));
+        signal?.addEventListener('abort', abort, { once: true });
+        entry.promise.then(value => finish(() => resolve(structuredClone(value))), error => finish(() => reject(error)));
+        if (signal?.aborted)
+            abort();
     });
 }
-function isSkipDashCompatibilityError(error) {
-    const details = error;
-    const message = `${details?.message || ''}\n${details?.stderr || ''}`.toLowerCase();
-    return /extractor.?args|skip=dash/.test(message)
-        && /invalid|unsupported|unknown|unrecognized|not recognized|no such/.test(message);
-}
-export async function fetchVideoInfo(rawUrl, signal) {
-    const normalizedUrl = normalizeMediaUrl(rawUrl);
+export async function fetchVideoInfo(rawUrl, signal, auth = { mode: 'none' }) {
+    if (stopping)
+        throw new OperationError('SHUTTING_DOWN', 'metadata', '', 503);
     if (signal?.aborted)
-        throw createAbortError();
-    // 1. Verificação no cache de memória
-    const cached = metadataCache.get(normalizedUrl);
-    if (cached && cached.expiresAt > Date.now()) {
-        return cached.data;
-    }
-    // 2. Deduplicação de requisições concorrentes (se já estiver buscando a mesma URL, aguarda a mesma promessa)
-    const existingFetch = inFlightFetches.get(normalizedUrl);
-    if (existingFetch && !existingFetch.controller.signal.aborted) {
-        return subscribeToFetch(existingFetch, signal);
-    }
-    if (existingFetch)
-        inFlightFetches.delete(normalizedUrl);
+        throw abortError();
+    auth = await validateAuthContext(auth);
+    const url = normalizeMediaUrl(rawUrl);
+    const key = await cacheKey(url, auth);
+    if (stopping)
+        throw new OperationError('SHUTTING_DOWN', 'metadata', '', 503);
+    // Browser cookies can change between invocations; do not cache authenticated browser results.
+    const cached = auth.mode !== 'browser' ? cache.get(key) : undefined;
+    if (cached && cached.expires > Date.now())
+        return structuredClone(cached.data);
+    const existing = pending.get(key);
+    if (existing && !existing.controller.signal.aborted)
+        return subscribe(existing, signal);
+    if (pending.size >= 22)
+        throw new OperationError('CAPACITY', 'metadata', '', 503);
     const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45000);
+    const startedAt = Date.now();
     let entry;
-    const fetchPromise = (async () => {
-        const releaseSlot = await acquireMetadataSlot(controller.signal);
+    const promise = (async () => {
+        let executionContext = {};
+        const release = await acquire(controller.signal).catch(error => { if (Date.now() - startedAt >= 44500)
+            throw new OperationError('TIMEOUT', 'metadata', 'Prazo total da consulta excedido na espera', 504); throw error; });
         try {
             const config = loadConfig();
-            const ytdlpPath = config.ytdlpPath;
-            // Flags de alta performance para extração rápida de metadados
-            const buildArgs = (skipDash = true) => {
-                const args = [
-                    '--dump-single-json',
-                    '--no-playlist',
-                    '--no-warnings',
-                    '--skip-download',
-                    '--no-call-home',
-                    '--socket-timeout',
-                    '10',
-                ];
-                if (skipDash && (normalizedUrl.includes('youtube.com') || normalizedUrl.includes('youtu.be'))) {
-                    args.push('--extractor-args', 'youtube:skip=dash');
-                }
-                args.push(normalizedUrl);
-                return args;
-            };
-            let stdout = '';
-            const deadline = Date.now() + 45000;
-            const runMetadata = async (skipDash) => {
-                const timeout = Math.min(30000, deadline - Date.now());
-                if (timeout <= 0)
-                    throw new Error('Tempo limite para consulta de metadados excedido');
-                return execFileAsync(ytdlpPath, buildArgs(skipDash), {
-                    maxBuffer: 50 * 1024 * 1024,
-                    timeout,
-                    signal: controller.signal,
-                });
-            };
-            try {
-                const res = await runMetadata(true);
-                stdout = res.stdout;
+            executionContext = await verifyBinaryIntegrity('yt-dlp');
+            const result = await executeBuffered({ binaryPath: config.ytdlpPath, args: buildMetadataArgs(url, auth), signal: controller.signal, timeoutMs: Math.max(1, 45000 - (Date.now() - startedAt)), maxBuffer: 20 * 1024 * 1024 });
+            const metadata = parseMetadata(result.stdout, url, result.stderr);
+            if (auth.mode !== 'browser') {
+                cache.set(key, { data: metadata, expires: Date.now() + 15 * 60 * 1000 });
+                if (cache.size > 100)
+                    cache.delete(cache.keys().next().value);
             }
-            catch (error) {
-                if (controller.signal.aborted || !isSkipDashCompatibilityError(error))
-                    throw error;
-                // Só repete sem a otimização do YouTube se o erro apontar incompatibilidade dessa opção.
-                const res = await runMetadata(false);
-                stdout = res.stdout;
+            return metadata;
+        }
+        catch (error) {
+            if (controller.signal.aborted) {
+                if (Date.now() - startedAt >= 44500)
+                    throw new OperationError('TIMEOUT', 'metadata', 'Prazo total da consulta excedido', 504);
+                throw abortError();
             }
-            try {
-                const data = JSON.parse(stdout);
-                // Coleta resoluções disponíveis
-                const resolutionsSet = new Set();
-                if (Array.isArray(data.formats)) {
-                    for (const f of data.formats) {
-                        if (f.height && f.vcodec && f.vcodec !== 'none') {
-                            resolutionsSet.add(`${f.height}p`);
-                        }
-                    }
-                }
-                // Ordena do maior para o menor
-                const availableResolutions = Array.from(resolutionsSet).sort((a, b) => {
-                    return parseInt(b, 10) - parseInt(a, 10);
-                });
-                const result = {
-                    id: data.id || 'unknown',
-                    title: data.title || 'Sem título',
-                    thumbnail: data.thumbnail,
-                    duration: data.duration,
-                    durationString: data.duration_string,
-                    uploader: data.uploader || data.channel,
-                    description: data.description ? data.description.slice(0, 300) : undefined,
-                    availableResolutions,
-                };
-                // Armazena no cache
-                metadataCache.set(normalizedUrl, {
-                    data: result,
-                    expiresAt: Date.now() + CACHE_TTL_MS,
-                });
-                // Limpeza de cache antigo para economizar memória (máximo 100 itens)
-                if (metadataCache.size > 100) {
-                    const oldestKey = metadataCache.keys().next().value;
-                    if (oldestKey)
-                        metadataCache.delete(oldestKey);
-                }
-                return result;
-            }
-            catch (err) {
-                throw new Error(`Falha ao obter dados do vídeo: ${err.message}`);
-            }
+            throw classifyFailure(error, 'metadata', { ...executionContext, authMode: auth.mode, durationMs: Date.now() - startedAt });
         }
         finally {
-            releaseSlot();
+            release();
         }
     })();
-    entry = {
-        controller,
-        promise: fetchPromise.finally(() => {
-            entry.settled = true;
-            if (inFlightFetches.get(normalizedUrl) === entry)
-                inFlightFetches.delete(normalizedUrl);
-        }),
-        consumers: 0,
-        settled: false,
-    };
-    inFlightFetches.set(normalizedUrl, entry);
-    return subscribeToFetch(entry, signal);
+    entry = { controller, consumers: 0, settled: false, promise: promise.finally(() => { clearTimeout(timer); entry.settled = true; if (pending.get(key) === entry)
+            pending.delete(key); }) };
+    pending.set(key, entry);
+    void entry.promise.catch(() => { });
+    return subscribe(entry, signal);
 }
-export function buildYtdlpArgs(options) {
-    const config = loadConfig();
-    const args = [];
-    // Localização do FFmpeg
-    if (config.ffmpegPath && fs.existsSync(config.ffmpegPath)) {
-        // Passa o diretório do ffmpeg ou o caminho direto
-        const ffmpegDir = path.dirname(config.ffmpegPath);
-        args.push('--ffmpeg-location', ffmpegDir);
-    }
-    // Flags essenciais de formato e terminal
-    args.push('--newline');
-    args.push('--no-playlist');
-    args.push('--no-colors');
-    // Template de progresso determinístico
-    const progressTemplate = `download:${PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._speed_str)s|%(progress._total_bytes_str|progress._total_bytes_estimate_str)s|%(progress._downloaded_bytes_str)s|%(progress._eta_str)s`;
-    args.push('--progress-template', progressTemplate);
-    // Pasta de saída
-    const outputFolder = options.outputDir && fs.existsSync(options.outputDir)
-        ? options.outputDir
-        : config.defaultDownloadDir;
-    // Garante que a pasta exista
-    if (!fs.existsSync(outputFolder)) {
-        fs.mkdirSync(outputFolder, { recursive: true });
-    }
-    // Nome do arquivo
-    let filenamePattern = '%(title)s.%(ext)s';
-    if (options.customFilename) {
-        // Sanitiza caracteres proibidos em nomes de arquivos do Windows
-        const sanitized = options.customFilename.replace(/[\\/:*?"<>|]/g, '_');
-        filenamePattern = `${sanitized}.%(ext)s`;
-    }
-    const outputPath = path.resolve(outputFolder, filenamePattern);
-    args.push('-o', outputPath);
+export async function shutdownMetadata() {
+    stopping = true;
+    const entries = [...pending.values()];
+    for (const entry of entries)
+        entry.controller.abort();
+    await Promise.allSettled(entries.map(e => e.promise));
+    cache.clear();
+}
+export function buildYtdlpArgs(options, context) {
+    const { config, auth, jobId, outputFolder } = context;
+    const args = ['--ignore-config', '--no-cache-dir', '--newline', '--no-simulate', '--progress', '--no-playlist', '--no-colors', '--windows-filenames', '--socket-timeout', '20', '--retries', '3', '--max-downloads', '100', ...buildAccessArgs(auth)];
+    if (config.ffmpegPath)
+        args.push('--ffmpeg-location', config.ffmpegPath);
+    args.push('--progress-template', `download:${PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._speed_str)s|%(progress._total_bytes_str|progress._total_bytes_estimate_str)s|%(progress._downloaded_bytes_str)s|%(progress._eta_str)s`);
+    args.push('--progress-template', 'postprocess:__POSTPROCESS__%(progress.postprocessor)s|%(progress.status)s');
+    args.push('--print', 'before_dl:__INFO__%(.{id,title,thumbnail,duration,extractor_key})j', '--print', 'after_move:__FILE__%(filepath)j');
+    let name = options.customFilename?.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/[\s.]+$/, '').trim().slice(0, 80).replace(/%/g, '%%') || '%(title).80B';
+    if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(name))
+        name = `_${name}`;
+    args.push('-o', path.join(outputFolder, `${jobId}-%(autonumber)05d-%(playlist_index|0)s-%(id).40B-${name}.%(ext)s`));
     if (options.mode === 'audio') {
-        // Modo apenas áudio
-        args.push('-x');
-        args.push('--audio-format', options.audioFormat);
-        if (options.audioQuality !== 'best') {
-            args.push('--audio-quality', options.audioQuality);
-        }
+        args.push('-x', '--audio-format', options.audioFormat);
+        if (options.audioQuality !== 'best')
+            args.push('--audio-quality', options.audioQuality.replace(/k$/, 'K'));
     }
     else {
-        // Modo vídeo
-        if (options.videoResolution === 'best') {
-            args.push('-f', `bestvideo+bestaudio/best`);
-        }
-        else {
-            const height = parseInt(options.videoResolution.replace('p', ''), 10);
-            args.push('-f', `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`);
-        }
-        // Container de merge
-        args.push('--merge-output-format', options.videoContainer);
+        const ceiling = options.videoResolution === 'best' ? '' : `[height<=${parseInt(options.videoResolution, 10)}]`;
+        args.push('-f', `bestvideo${ceiling}+bestaudio/best${ceiling}`, '--merge-output-format', options.videoContainer, '--remux-video', options.videoContainer);
     }
-    // Opcionais
-    if (options.embedThumbnail) {
+    if (options.embedThumbnail)
         args.push('--embed-thumbnail');
-    }
-    if (options.embedSubtitles) {
+    if (options.embedSubtitles)
         args.push('--embed-subs', '--sub-langs', 'all,-live_chat');
-    }
-    // A URL sempre deve ser o último argumento (normalizada)
-    args.push(normalizeMediaUrl(options.url));
+    args.push('--', normalizeMediaUrl(options.url));
     return { args, outputFolder };
 }

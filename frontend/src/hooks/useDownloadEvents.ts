@@ -1,125 +1,62 @@
 import { useState, useEffect, useCallback } from 'react';
-import { DownloadJob, DownloadProgress, DownloadStatus } from '../types/download.js';
-
-interface SSEMessage {
-  type: 'PROGRESS' | 'STATUS' | 'LOG' | 'JOB_ADDED' | 'JOB_REMOVED';
-  jobId: string;
-  payload: any;
-}
+import { z } from 'zod';
+import { JobsSnapshotSchema, SSEEventSchema, applyJobEvent, type DownloadJob, type SSEEventData } from '@ytdlp/shared';
+import { apiRequest, errorMessage } from '../utils/api.js';
+import { reconcileSnapshot } from '../utils/reconcile.js';
 
 export function useDownloadEvents() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
   const [connected, setConnected] = useState(false);
-
-  const fetchJobs = useCallback(async () => {
-    try {
-      const res = await fetch('/api/downloads');
-      if (res.ok) {
-        const data = await res.json();
-        setJobs(data);
-      }
-    } catch (err) {
-      console.error('Erro ao buscar lista de downloads:', err);
-    }
-  }, []);
-
+  const [operationError, setOperationError] = useState<string | null>(null);
   useEffect(() => {
-    fetchJobs();
-
+    let disposed = false, generation = 0;
+    let controller: AbortController | undefined;
+    let buffer: SSEEventData[] | undefined;
     const eventSource = new EventSource('/api/downloads/events');
-
-    eventSource.onopen = () => {
-      setConnected(true);
-    };
-
-    eventSource.onerror = () => {
-      setConnected(false);
-    };
-
-    eventSource.onmessage = (event) => {
+    const fetchJobs = async () => {
+      const request = ++generation;
+      controller?.abort();
+      controller = new AbortController();
+      buffer = [];
       try {
-        const msg: SSEMessage = JSON.parse(event.data);
-
-        setJobs((prevJobs) => {
-          if (msg.type === 'JOB_ADDED') {
-            const exists = prevJobs.some((j) => j.id === msg.payload.id);
-            if (exists) return prevJobs;
-            return [msg.payload, ...prevJobs];
-          }
-
-          if (msg.type === 'JOB_REMOVED') {
-            return prevJobs.filter((j) => j.id !== msg.payload.id);
-          }
-
-          return prevJobs.map((job) => {
-            if (job.id !== msg.jobId) return job;
-
-            if (msg.type === 'PROGRESS') {
-              return {
-                ...job,
-                progress: msg.payload.progress as DownloadProgress,
-                status: (msg.payload.status || job.status) as DownloadStatus,
-              };
-            }
-
-            if (msg.type === 'STATUS') {
-              return {
-                ...job,
-                ...msg.payload,
-                progress: msg.payload.progress ? msg.payload.progress : job.progress,
-              };
-            }
-
-            if (msg.type === 'LOG') {
-              const newLogs = [...job.logs, msg.payload.line];
-              if (newLogs.length > 200) newLogs.shift();
-              return {
-                ...job,
-                logs: newLogs,
-              };
-            }
-
-            return job;
-          });
-        });
-      } catch (err) {
-        // Ignora heartbeats ou pings
+        const snapshot = await apiRequest('/api/downloads', JobsSnapshotSchema, { signal: controller.signal });
+        if (disposed || request !== generation) return;
+        const events = buffer || [];
+        buffer = undefined;
+        setJobs(reconcileSnapshot(snapshot, events));
+      } catch (error) {
+        if (!disposed && request === generation && !(error instanceof Error && error.name === 'AbortError')) {
+          buffer = undefined;
+          setOperationError(errorMessage(error));
+        }
       }
     };
-
-    return () => {
-      eventSource.close();
+    eventSource.onopen = () => { setConnected(true); void fetchJobs(); };
+    eventSource.onerror = () => {
+      setConnected(false); generation++; controller?.abort(); buffer = undefined;
     };
-  }, [fetchJobs]);
-
-  const cancelJob = async (id: string) => {
-    try {
-      const res = await fetch(`/api/downloads/${id}/cancel`, { method: 'POST' });
-      return res.ok;
-    } catch (err) {
-      console.error('Erro ao cancelar download:', err);
-      return false;
-    }
-  };
-
-  const deleteJob = async (id: string) => {
-    try {
-      const res = await fetch(`/api/downloads/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setJobs((prev) => prev.filter((j) => j.id !== id));
+    eventSource.onmessage = event => {
+      let value: unknown;
+      try { value = JSON.parse(event.data); } catch { setOperationError('Evento inválido recebido do servidor.'); return; }
+      const parsed = SSEEventSchema.safeParse(value);
+      if (!parsed.success) { setOperationError('Evento incompatível recebido do servidor.'); return; }
+      const message = parsed.data;
+      if (buffer) {
+        buffer.push(message);
+        if (buffer.length > 2000) { void fetchJobs(); return; }
       }
-      return res.ok;
-    } catch (err) {
-      console.error('Erro ao excluir download:', err);
-      return false;
-    }
-  };
-
-  return {
-    jobs,
-    connected,
-    cancelJob,
-    deleteJob,
-    refreshJobs: fetchJobs,
-  };
+      setJobs(previous => applyJobEvent(previous, message));
+    };
+    return () => { disposed = true; generation++; controller?.abort(); eventSource.close(); };
+  }, []);
+  const act = useCallback(async (id: string, method: 'POST' | 'DELETE') => {
+    setOperationError(null);
+    try {
+      await apiRequest(`/api/downloads/${encodeURIComponent(id)}${method === 'POST' ? '/cancel' : ''}`, z.object({ success: z.literal(true) }), { method });
+      return true;
+    } catch (error) { setOperationError(errorMessage(error)); return false; }
+  }, []);
+  const cancelJob = useCallback((id: string) => act(id, 'POST'), [act]);
+  const deleteJob = useCallback((id: string) => act(id, 'DELETE'), [act]);
+  return { jobs, connected, cancelJob, deleteJob, operationError };
 }

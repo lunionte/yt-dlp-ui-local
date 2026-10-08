@@ -1,35 +1,23 @@
-import { Router, Request, Response } from 'express';
-import { z } from 'zod';
+import { Router } from 'express';
+import { InfoQuerySchema } from '@ytdlp/shared';
 import { fetchVideoInfo } from '../services/ytdlp.service.js';
-import { normalizeMediaUrl } from '../utils/url.utils.js';
-
-const router = Router();
-
-const InfoQuerySchema = z.object({
-  url: z.string().min(1, 'A URL é obrigatória').transform(normalizeMediaUrl).pipe(z.string().url('URL inválida')),
-});
-
-
-router.post('/', async (req: Request, res: Response) => {
-  const result = InfoQuerySchema.safeParse(req.body);
-  if (!result.success) {
-    res.status(400).json({ error: result.error.errors[0].message });
-    return;
-  }
-
-  const controller = new AbortController();
-  res.on('close', () => {
-    if (!res.writableEnded) controller.abort();
-  });
-
-  try {
-    const info = await fetchVideoInfo(result.data.url, controller.signal);
-    if (res.destroyed) return;
-    res.json(info);
-  } catch (err: any) {
-    if (controller.signal.aborted || res.destroyed) return;
-    res.status(500).json({ error: err.message || 'Erro ao obter informações do vídeo' });
-  }
-});
-
-export default router;
+import { OperationError } from '../services/error.service.js';
+import { asyncRoute } from '../utils/http.utils.js';
+export function createInfoRouter(fetchInfo = fetchVideoInfo): Router {
+  const router = Router();
+  router.post('/', asyncRoute(async (req, res) => {
+    const parsed = InfoQuerySchema.safeParse(req.body);
+    if (!parsed.success) throw new OperationError('VALIDATION_ERROR', 'metadata', 'URL ou contexto inválido', 400);
+    const controller = new AbortController();
+    const closed = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', closed);
+    try {
+      const info = await fetchInfo(parsed.data.url, controller.signal, parsed.data.auth);
+      if (!res.destroyed) res.json(info);
+    } catch (error) {
+      if (!controller.signal.aborted && !res.destroyed) throw error;
+    } finally { res.off('close', closed); }
+  }));
+  return router;
+}
+export default createInfoRouter();

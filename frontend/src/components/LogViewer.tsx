@@ -17,6 +17,15 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
   }, [logs]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (isOpen && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
@@ -32,6 +41,8 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClo
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >

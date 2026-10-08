@@ -1,3 +1,4 @@
+import { openDownloadFolder, selectDownloadFolder } from '../utils/system.js';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Download,
@@ -25,11 +26,13 @@ import {
 } from '../types/download.js';
 import { normalizeMediaUrl, isLikelyMediaUrl } from '../utils/url.js';
 import { formatFriendlyErrorMessage } from '../utils/error.js';
+import { DiagnosticDetails } from './DiagnosticDetails.js';
 
 interface DownloaderCardProps {
   url: string;
+  diagnosticId?: string;
   onChangeUrl: (url: string) => void;
-  onFetchMetadata: (url: string) => Promise<void>;
+  onFetchMetadata: (url: string) => Promise<boolean>;
   onCancelMetadata: () => void;
   isLoadingMetadata: boolean;
   metadata: VideoMetadata | null;
@@ -45,6 +48,7 @@ interface DownloaderCardProps {
 
 export const DownloaderCard: React.FC<DownloaderCardProps> = ({
   url,
+  diagnosticId,
   onChangeUrl,
   onFetchMetadata,
   onCancelMetadata,
@@ -63,7 +67,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
   const [isBrowsing, setIsBrowsing] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const [folderSelected, setFolderSelected] = useState(false);
-  const lastFetchedUrlRef = useRef<string>('');
+  const lastAttemptedUrlRef = useRef<string>('');
   const folderSelectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -78,7 +82,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
   useEffect(() => {
     const trimmed = url.trim();
     if (!trimmed) {
-      lastFetchedUrlRef.current = '';
+      lastAttemptedUrlRef.current = '';
       if (metadata) {
         onClearMetadata();
       }
@@ -90,17 +94,17 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
     }
 
     const normalized = normalizeMediaUrl(trimmed);
-    if (normalized === lastFetchedUrlRef.current) {
+    if (normalized === lastAttemptedUrlRef.current) {
       return;
     }
 
     const timer = setTimeout(() => {
-      lastFetchedUrlRef.current = normalized;
-      onFetchMetadata(normalized);
+      lastAttemptedUrlRef.current = normalized;
+      void onFetchMetadata(normalized).then(success => { if (!success && lastAttemptedUrlRef.current === normalized) lastAttemptedUrlRef.current = ''; });
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [url, metadata, onClearMetadata, onFetchMetadata]);
+  }, [url, onFetchMetadata]);
 
   const triggerImmediateFetch = (rawText: string) => {
     const trimmed = rawText.trim();
@@ -111,14 +115,14 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
 
     if (isLikelyMediaUrl(trimmed)) {
       const normalized = normalizeMediaUrl(trimmed);
-      lastFetchedUrlRef.current = normalized;
+      lastAttemptedUrlRef.current = normalized;
       onFetchMetadata(normalized);
     }
   };
 
   const handleUrlChange = (nextUrl: string) => {
     if (nextUrl !== url) {
-      lastFetchedUrlRef.current = '';
+      lastAttemptedUrlRef.current = '';
       onCancelMetadata();
       if (actionError) onDismissError();
     }
@@ -151,13 +155,13 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
     const trimmed = url.trim();
     if (trimmed) {
       const normalized = normalizeMediaUrl(trimmed);
-      lastFetchedUrlRef.current = normalized;
+      lastAttemptedUrlRef.current = normalized;
       onFetchMetadata(normalized);
     }
   };
 
   const handleClear = () => {
-    lastFetchedUrlRef.current = '';
+    lastAttemptedUrlRef.current = '';
     onCancelMetadata();
     onChangeUrl('');
     onClearMetadata();
@@ -177,32 +181,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
     setIsBrowsing(true);
     try {
       const currentFolder = options.outputDir || defaultFolder;
-      const api = (window as any).electronAPI;
-      let selectedPath: string | null = null;
-
-      if (api?.selectFolder) {
-        const result = await api.selectFolder(currentFolder);
-        if (!result.cancelled && result.path) {
-          selectedPath = result.path;
-        }
-      } else {
-        const res = await fetch('/api/system/browse', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'folder',
-            title: 'Selecione a pasta de destino do download',
-            defaultPath: currentFolder,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.path) {
-            selectedPath = data.path;
-          }
-        }
-      }
+      const selectedPath = await selectDownloadFolder(currentFolder);
 
       if (selectedPath) {
         update('outputDir', selectedPath);
@@ -226,16 +205,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
     if (!currentFolder) return;
     setIsOpeningFolder(true);
     try {
-      const api = (window as any).electronAPI;
-      if (api?.openFolder) {
-        await api.openFolder(currentFolder);
-      } else {
-        await fetch('/api/system/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folderPath: currentFolder }),
-        });
-      }
+      await openDownloadFolder(currentFolder);
     } catch (err) {
       console.error('Erro ao abrir pasta no explorador:', err);
     } finally {
@@ -255,7 +225,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
 
   const ext = isVideo ? options.videoContainer || 'mp4' : options.audioFormat || 'mp3';
   const baseName = options.customFilename?.trim() || metadata?.title || 'titulo_do_video';
-  const previewFilename = `${baseName.replace(/[\\/:*?"<>|]/g, '_')}.${ext}`;
+  const previewFilename = `${baseName.replace(/[\\/:*?"<>|]/g, '_')}-[job]-[índice]-[mídia].${ext}`;
 
   // Define se o cabeçalho introdutório deve ficar recolhido para economizar altura vertical
   const isCompactMode = Boolean(url || metadata);
@@ -368,7 +338,7 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
         <div className="mt-3.5 p-3 rounded-2xl glass-pill !bg-rose-50/80 !border-rose-200/70 text-rose-700 text-xs flex items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
           <div className="flex items-center gap-2 min-w-0">
             <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" strokeWidth={1.5} />
-            <span className="font-medium truncate">{formatFriendlyErrorMessage(actionError)}</span>
+            <div className="font-medium min-w-0 break-words">{formatFriendlyErrorMessage(actionError)}<DiagnosticDetails id={diagnosticId} /><button type="button" className="glass-button mt-2 px-3 py-1.5" disabled={isLoadingMetadata} onClick={() => triggerImmediateFetch(url)}>Tentar novamente</button></div>
           </div>
           <button
             type="button"
@@ -409,6 +379,8 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
                 <h3 className="font-bold text-slate-900 text-xs sm:text-sm line-clamp-1 leading-snug">
                   {metadata.title}
                 </h3>
+                {metadata.kind === 'collection' && <p className="text-xs text-slate-600 mt-1">Coleção: {metadata.entries.length} mídias. Todas as mídias acessíveis serão baixadas.</p>}
+                {metadata.warnings.length > 0 && <details className="mt-1 text-xs text-amber-700"><summary>Avisos da origem</summary>{metadata.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</details>}
                 <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-600 mt-1">
                   {metadata.uploader && (
                     <span className="flex items-center gap-1 text-[11px]">

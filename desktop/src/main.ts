@@ -14,34 +14,20 @@
 
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, shell } from 'electron';
 import path from 'node:path';
-import net from 'node:net';
+import { once } from 'node:events';
+import type { Server } from 'node:http';
+import type { IpcMainInvokeEvent } from 'electron';
+import { BrowseSchema, OpenFolderSchema } from '@ytdlp/shared';
+import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
 import { createTray, destroyTray, getMinimizeToTray } from './tray.js';
+import { createQuitGuard } from './lifecycle.js';
 
 import fs from 'node:fs';
 
 // ─── Constants & Paths ──────────────────────────────────────────────
 const IS_DEV = !app.isPackaged;
-
-function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const tester = net.createServer();
-    tester.once('error', () => resolve(false));
-    tester.once('listening', () => {
-      tester.close(() => resolve(true));
-    });
-    tester.listen(port, '127.0.0.1');
-  });
-}
-
-async function getAvailablePort(desiredPort: number): Promise<number> {
-  for (let p = desiredPort; p < desiredPort + 50; p++) {
-    if (await isPortFree(p)) {
-      return p;
-    }
-  }
-  return 0;
-}
+if (!IS_DEV) process.env.NODE_ENV = 'production';
 
 function resolveAppRoot(): string {
   if (app.isPackaged) {
@@ -83,7 +69,7 @@ if (!gotLock) {
 // ─── State ──────────────────────────────────────────────────────────
 let win: BrowserWindow | null = null;
 let isQuitting = false;
-let serverHandle: { close: (cb?: () => void) => void } | null = null;
+let serverHandle: Server | null = null;
 
 // ─── Icon ───────────────────────────────────────────────────────────
 function getAppIcon(): Electron.NativeImage {
@@ -132,6 +118,7 @@ function createWindow(): BrowserWindow {
       preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       spellcheck: false,
       devTools: IS_DEV,
     },
@@ -149,6 +136,26 @@ function createWindow(): BrowserWindow {
 
   window.on('unmaximize', () => {
     window.webContents.send('window-maximized-change', false);
+  });
+
+  // ── Bloquear navegações não autorizadas e abrir links externos no navegador padrão ──
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:')) {
+      void shell.openExternal(url).catch(() => console.error('[Electron] Falha ao abrir link externo'));
+    }
+    return { action: 'deny' };
+  });
+
+  window.webContents.on('will-navigate', (event, navigationUrl) => {
+    try {
+      const parsed = new URL(navigationUrl);
+      if (parsed.origin !== `http://127.0.0.1:${activePort}`) {
+        event.preventDefault();
+        if (['http:', 'https:'].includes(parsed.protocol)) void shell.openExternal(navigationUrl).catch(() => console.error('[Electron] Falha ao abrir link externo'));
+      }
+    } catch {
+      event.preventDefault();
+    }
   });
 
   // ── Exibir somente quando o conteúdo estiver pronto ──
@@ -186,23 +193,33 @@ function createWindow(): BrowserWindow {
   });
 
   // ── Carregar a aplicação ──
-  window.loadURL(`http://localhost:${activePort}`);
+  window.loadURL(`http://127.0.0.1:${activePort}`);
 
   return window;
 }
 
 // ─── IPC Handlers ───────────────────────────────────────────────────
+function handle(channel: string, callback: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
+  ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    if (!win || event.sender !== win.webContents || event.senderFrame !== event.sender.mainFrame || new URL(event.senderFrame.url).origin !== `http://127.0.0.1:${activePort}`) throw new Error('Origem IPC não autorizada');
+    return callback(event, ...args);
+  });
+}
 function setupIPC(): void {
-  ipcMain.handle('get-app-version', () => app.getVersion());
-  ipcMain.handle('is-electron', () => true);
+  handle('get-app-version', () => app.getVersion());
+  handle('is-electron', () => true);
 
-  ipcMain.handle('show-notification', (_event, title: string, body: string) => {
+  handle('show-notification', (_event, rawTitle: unknown, rawBody: unknown) => {
+    const title = z.string().max(500).parse(rawTitle);
+    const body = z.string().max(2000).parse(rawBody);
     if (Notification.isSupported()) {
       new Notification({ title, body, icon: getAppIcon() }).show();
     }
   });
 
-  ipcMain.handle('select-folder', async (_event, defaultPath?: string) => {
+  handle('select-folder', async (_event, rawPath?: unknown) => {
+    const { defaultPath } = BrowseSchema.parse({ type: 'folder', defaultPath: rawPath });
+    if (defaultPath) await serverModuleInstance!.requireDirectory(defaultPath);
     const parentWindow = win || BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
     if (!parentWindow) return { path: null, cancelled: true };
 
@@ -218,31 +235,23 @@ function setupIPC(): void {
     return { path: result.filePaths[0], cancelled: false };
   });
 
-  ipcMain.handle('open-folder', async (_event, folderPath: string) => {
+  handle('open-folder', async (_event, rawPath: unknown) => {
     try {
-      const target = path.resolve(folderPath);
-      if (!fs.existsSync(target)) {
-        fs.mkdirSync(target, { recursive: true });
-      }
-      const errMsg = await shell.openPath(target);
-      if (errMsg) {
-        console.error('[Electron] Erro ao abrir pasta:', errMsg);
-        return { success: false, error: errMsg };
-      }
-      return { success: true };
-    } catch (err: any) {
-      console.error('[Electron] Falha ao abrir pasta:', err);
-      return { success: false, error: err.message };
-    }
+      const { folderPath } = OpenFolderSchema.parse({ folderPath: rawPath });
+      if (!folderPath) throw new Error('Informe uma pasta');
+      const target = await serverModuleInstance!.requireDirectory(folderPath);
+      const error = await shell.openPath(target);
+      return error ? { success: false, error: 'Não foi possível abrir a pasta.' } : { success: true };
+    } catch { return { success: false, error: 'A pasta precisa ser um diretório absoluto existente.' }; }
   });
 
   // ── Controles de Janela (Frameless) ──
-  ipcMain.handle('window-minimize', () => {
+  handle('window-minimize', () => {
     const targetWin = win || BrowserWindow.getFocusedWindow();
     if (targetWin) targetWin.minimize();
   });
 
-  ipcMain.handle('window-maximize', () => {
+  handle('window-maximize', () => {
     const targetWin = win || BrowserWindow.getFocusedWindow();
     if (targetWin) {
       if (targetWin.isMaximized()) {
@@ -253,30 +262,35 @@ function setupIPC(): void {
     }
   });
 
-  ipcMain.handle('window-close', () => {
+  handle('window-close', () => {
     const targetWin = win || BrowserWindow.getFocusedWindow();
     if (targetWin) targetWin.close();
   });
 
-  ipcMain.handle('window-is-maximized', () => {
+  handle('window-is-maximized', () => {
     const targetWin = win || BrowserWindow.getFocusedWindow();
     return targetWin ? targetWin.isMaximized() : false;
   });
 }
 
+interface BackendModule { startServer: (port?: number) => Server; stopServer: (server?: Server) => Promise<void>; requireDirectory: (input: string, writable?: boolean) => Promise<string>; }
+let serverModuleInstance: BackendModule | null = null;
+
 // ─── Backend Startup ────────────────────────────────────────────────
 async function startBackend(): Promise<void> {
-  const freePort = await getAvailablePort(3001);
-  activePort = freePort;
-  process.env.PORT = String(freePort);
+  activePort = 0;
 
   const serverPath = path.join(APP_ROOT, 'backend', 'dist', 'server.js');
   const serverUrl = pathToFileURL(serverPath).href;
 
-  const serverModule = await import(serverUrl);
+  serverModuleInstance = await import(serverUrl) as BackendModule;
 
-  if (typeof serverModule.startServer === 'function') {
-    serverHandle = serverModule.startServer(activePort);
+  if (typeof serverModuleInstance.startServer === 'function') {
+    serverHandle = serverModuleInstance.startServer(activePort);
+    await once(serverHandle, 'listening');
+    const address = serverHandle.address();
+    if (!address || typeof address === 'string') throw new Error('Backend sem porta válida');
+    activePort = address.port;
   }
 }
 
@@ -309,15 +323,16 @@ app.on('before-quit', () => {
   isQuitting = true;
 });
 
-app.on('will-quit', () => {
+app.on('before-quit', createQuitGuard(async () => {
+  if (serverModuleInstance) await serverModuleInstance.stopServer(serverHandle || undefined);
+  else if (serverHandle) await new Promise<void>(resolve => serverHandle!.close(() => resolve()));
+  serverHandle = null;
   destroyTray();
-
-  // Encerra o servidor Express graciosamente
-  if (serverHandle) {
-    serverHandle.close();
-    serverHandle = null;
-  }
-});
+}, () => app.quit(), error => {
+  isQuitting = false;
+  console.error('[Electron] Encerramento não confirmado:', error);
+  dialog.showErrorBox('Falha ao encerrar', 'Não foi possível confirmar o encerramento das tarefas. Tente sair novamente.');
+}));
 
 // Não encerra o app quando todas as janelas fecham (fica no tray)
 app.on('window-all-closed', () => {
