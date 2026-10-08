@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { CreateDownloadSchema, type DownloadJob } from '@ytdlp/shared';
+import { CreateDownloadSchema, normalizeFileStem, type DownloadJob } from '@ytdlp/shared';
 import { loadConfig, checkToolVersion } from '../src/config/paths.js';
 import { executeBuffered, runChildProcess, getRunningProcessCount } from '../src/services/runner.service.js';
 import { fetchVideoInfo, buildVideoFormatSelector } from '../src/services/ytdlp.service.js';
@@ -52,9 +52,10 @@ test('native yt-dlp selection respects portrait/landscape ceilings for separate 
   }
 });
 
-test('actual yt-dlp and FFmpeg download a local multi-media page, remux video and extract audio', {timeout:60000},async()=>{
+test('actual yt-dlp and FFmpeg publish readable original/custom names and concurrent collections', {timeout:120000},async()=>{
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ytdlp-ui-media-'));
   const config=loadConfig();
+  const outputDir=path.join(directory,'50% downloads');
   const tool=await checkToolVersion(config.ytdlpPath);
   assert.ok(tool.available,'yt-dlp must be installed for this integration gate');
   const source=path.join(directory,'source.mp4');
@@ -81,24 +82,38 @@ test('actual yt-dlp and FFmpeg download a local multi-media page, remux video an
   try{
     const preview=await fetchVideoInfo(url);
     assert.equal(preview.kind,'collection');assert.equal(preview.entries.length,2);
-    const video=await queue.addJob(CreateDownloadSchema.parse({url,videoResolution:'best',videoContainer:'mkv',outputDir:directory,customFilename:'same-title'}));
+    const customFilename = 'CON.txt 50% / vídeo 🎬';
+    const stem = normalizeFileStem(customFilename);
+    const video=await queue.addJob(CreateDownloadSchema.parse({url,videoResolution:'best',videoContainer:'mkv',outputDir,customFilename}));
     const videoResult=await waitJob(video.id);
     assert.equal(videoResult.status,'completed',JSON.stringify(videoResult.errorDetails));
     assert.equal(videoResult.outputFiles.length,2);
     assert.equal(new Set(videoResult.outputFiles).size,2);
     assert.ok(videoResult.outputFiles.every(file=>file.endsWith('.mkv')));
+    assert.deepEqual(videoResult.outputFiles.map(file => path.basename(file)), [`${stem}.mkv`, `${stem} (2).mkv`]);
     assert.equal(videoResult.metadata?.kind,'collection');
     assert.ok(progressStages.includes('downloading'),'Structured download progress must remain enabled alongside --print');
     assert.ok(progressStages.includes('processing'),'Remux postprocessing hooks must report the actual stage');
     assert.ok(videoResult.logs.every(line=>!line.startsWith('__INFO__')));
     const probe=await runChildProcess({binaryPath:config.ffmpegPath,args:['-i',videoResult.outputFiles[0]],captureOutput:true,timeoutMs:10000}).promise;
     assert.match(probe.stderr,/matroska/);
-    const audio=await queue.addJob(CreateDownloadSchema.parse({url,mode:'audio',audioFormat:'mp3',audioQuality:'320k',outputDir:directory,customFilename:'same-title'}));
+    const audio=await queue.addJob(CreateDownloadSchema.parse({url,mode:'audio',audioFormat:'mp3',audioQuality:'320k',outputDir,customFilename}));
     const audioResult=await waitJob(audio.id);
     assert.equal(audioResult.status,'completed',JSON.stringify(audioResult.errorDetails));
     assert.equal(audioResult.outputFiles.length,2);
     assert.ok(audioResult.outputFiles.every(file=>file.endsWith('.mp3')));
-    console.log(`Local media: ${preview.entries.length} entries, ${videoResult.outputFiles.length} MKV, ${audioResult.outputFiles.length} MP3; engine ${'version' in tool ? tool.version : ''}`);
+    assert.deepEqual(audioResult.outputFiles.map(file => path.basename(file)), [`${stem}.mp3`, `${stem} (2).mp3`]);
+    const original = await queue.addJob(CreateDownloadSchema.parse({url,videoResolution:'best',videoContainer:'mkv',outputDir}));
+    const originalResult = await waitJob(original.id);
+    assert.equal(originalResult.status, 'completed', JSON.stringify(originalResult.errorDetails));
+    assert.deepEqual(originalResult.outputFiles.map(file => path.basename(file)), originalResult.metadata!.entries.map(entry => `${normalizeFileStem(entry.title)}.mkv`));
+    const concurrent = await Promise.all([1,2].map(() => queue.addJob(CreateDownloadSchema.parse({url,videoResolution:'best',videoContainer:'mkv',outputDir,customFilename}))));
+    const results = await Promise.all(concurrent.map(job => waitJob(job.id)));
+    assert.ok(results.every(job => job.status === 'completed'), JSON.stringify(results.map(job => job.errorDetails)));
+    assert.deepEqual(results.flatMap(job => job.outputFiles).map(file => path.basename(file)).sort(), [3,4,5,6].map(index => `${stem} (${index}).mkv`));
+    await queue.shutdown();
+    assert.ok(!(await fs.readdir(outputDir)).some(name => name.startsWith('.ytdlp-')));
+    console.log(`Local media: original titles, Unicode/custom names, MP3/MKV and concurrent collisions verified; engine ${'version' in tool ? tool.version : ''}`);
   }finally{
     await queue.shutdown();
     await new Promise<void>(resolve=>{server.close(()=>resolve());server.closeAllConnections();});

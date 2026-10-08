@@ -2,7 +2,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { z } from 'zod';
-import { normalizeMediaUrl, VideoMetadataSchema, type AuthContext, type DownloadOptions, type VideoMetadata } from '@ytdlp/shared';
+import { normalizeFileStem, normalizeMediaUrl, VideoMetadataSchema, type AuthContext, type DownloadOptions, type VideoMetadata } from '@ytdlp/shared';
 import { loadConfig, verifyBinaryIntegrity, type SystemConfig } from '../config/paths.js';
 import { executeBuffered } from './runner.service.js';
 import { classifyFailure, OperationError, redactDiagnostic } from './error.service.js';
@@ -14,7 +14,7 @@ const entrySchema = z.object({
   id: z.union([z.string(), z.number()]).optional(), title: z.string().nullish(), thumbnail: z.string().nullish(),
   duration: z.number().finite().nonnegative().nullish(), duration_string: z.string().nullish(), uploader: z.string().nullish(),
   channel: z.string().nullish(), description: z.string().nullish(), extractor_key: z.string().nullish(), extractor: z.string().nullish(),
-  formats: z.array(z.object({ height: z.number().finite().nonnegative().nullish(), width: z.number().finite().nonnegative().nullish(), vcodec: z.string().nullish() }).passthrough()).nullish(),
+  formats: z.array(z.object({ height: z.number().finite().nonnegative().nullish(), width: z.number().finite().nonnegative().nullish(), vcodec: z.string().nullish(), acodec: z.string().nullish(), protocol: z.string().nullish(), aspect_ratio: z.number().finite().nonnegative().nullish() }).passthrough()).nullish(),
 }).passthrough();
 const extractionSchema = entrySchema.extend({ _type: z.string().optional(), entries: z.array(entrySchema.nullable()).max(100, 'A coleção excede o limite de 100 mídias').nullish() });
 export function parseMetadata(stdout: string, url: string, stderr = ''): VideoMetadata {
@@ -28,9 +28,13 @@ export function parseMetadata(stdout: string, url: string, stderr = ''): VideoMe
     thumbnail: item.thumbnail || undefined, duration: item.duration ?? undefined,
     durationString: item.duration_string || undefined, uploader: item.uploader || item.channel || undefined,
     description: item.description?.slice(0, 300) || undefined, extractor: item.extractor_key || item.extractor || undefined,
-    availableResolutions: [...new Set((item.formats || []).filter(f => f.vcodec && f.vcodec !== 'none').flatMap(f => {
-      const dimensions = [f.width, f.height].filter((value): value is number => typeof value === 'number' && value > 0);
-      return dimensions.length ? [`${Math.min(...dimensions)}p`] : [];
+    availableResolutions: [...new Set((item.formats || []).filter(f => f.vcodec && !['none', 'images'].includes(f.vcodec) && f.protocol !== 'mhtml').flatMap(f => {
+      // Width alone cannot pass the conservative height selector when orientation is unknown.
+      if (!f.height || f.height <= 0) return [];
+      if ((!f.width || f.width <= 0) && f.aspect_ratio != null && f.aspect_ratio < 1) return [];
+      if (f.acodec === 'none' && !(item.formats || []).some(audio => audio.vcodec === 'none' && audio.acodec && audio.acodec !== 'none')) return [];
+      const resolution = f.width && f.width > 0 ? Math.min(f.width, f.height) : f.height;
+      return Number.isInteger(resolution) ? [`${resolution}p`] : [];
     }))].sort((a,b) => parseInt(b)-parseInt(a)),
   });
   const collection = data._type === 'playlist' || !!data.entries;
@@ -160,16 +164,16 @@ export function buildVideoFormatSelector(resolution: DownloadOptions['videoResol
   const portrait = `[width<=${limit}][aspect_ratio<1]`;
   return `(bestvideo${landscape}/bestvideo${portrait})+bestaudio/best${landscape}/best${portrait}`;
 }
-export function buildYtdlpArgs(options: DownloadOptions, context: { config: SystemConfig; auth: AuthContext; jobId: string; outputFolder: string }): { args: string[]; outputFolder: string } {
+export function buildYtdlpArgs(options: DownloadOptions, context: { config: SystemConfig; auth: AuthContext; jobId: string; outputFolder: string; workspace?: string }): { args: string[]; outputFolder: string } {
   const { config, auth, jobId, outputFolder } = context;
   const args = ['--ignore-config', '--no-cache-dir', '--newline', '--no-simulate', '--progress', '--no-playlist', '--no-colors', '--windows-filenames', '--socket-timeout', '20', '--retries', '3', '--max-downloads', '100', ...buildAccessArgs(auth)];
   if (config.ffmpegPath) args.push('--ffmpeg-location', config.ffmpegPath);
   args.push('--progress-template', `download:${PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._speed_str)s|%(progress._total_bytes_str|progress._total_bytes_estimate_str)s|%(progress._downloaded_bytes_str)s|%(progress._eta_str)s`);
   args.push('--progress-template', 'postprocess:__POSTPROCESS__%(progress.postprocessor)s|%(progress.status)s');
   args.push('--print', 'before_dl:__INFO__%(.{id,title,thumbnail,duration,extractor_key})j', '--print', 'after_move:__FILE__%(filepath)j');
-  let name = options.customFilename?.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/[\s.]+$/, '').trim().slice(0, 80).replace(/%/g, '%%') || '%(title).80B';
-  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(name)) name = `_${name}`;
-  args.push('-o', path.join(outputFolder, `${jobId}-%(autonumber)05d-%(playlist_index|0)s-%(id).40B-${name}.%(ext)s`));
+  const name = options.customFilename ? normalizeFileStem(options.customFilename).replace(/%/g, '%%') : '%(title).80B';
+  const workspace = context.workspace || path.join(outputFolder, `.ytdlp-${jobId}`);
+  args.push('-o', path.join(workspace.replace(/%/g, '%%'), '%(autonumber)05d', `${name}.%(ext)s`));
   if (options.mode === 'audio') {
     args.push('-x', '--audio-format', options.audioFormat);
     if (options.audioQuality !== 'best') args.push('--audio-quality', options.audioQuality.replace(/k$/, 'K'));

@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Button, Modal, Tabs } from './components/ui.js';
+import { PagedText } from './components/PagedText.js';
 import { TitleBar } from './components/TitleBar.js';
 import { DownloaderCard } from './components/DownloaderCard.js';
-import { DownloadItem } from './components/DownloadItem.js';
+import { DownloadsPanel } from './components/DownloadsPanel.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { useDownloadEvents } from './hooks/useDownloadEvents.js';
 import {
@@ -9,12 +11,15 @@ import {
   SystemStatus,
   VideoMetadata,
 } from './types/download.js';
-import { ListFilter, AlertTriangle } from 'lucide-react';
 import { normalizeMediaUrl } from './utils/url.js';
 import { AuthContextSchema, SystemStatusSchema, VideoMetadataSchema, DownloadJobSchema, type AuthContext } from '@ytdlp/shared';
 import { apiRequest, ApiFailure, errorMessage } from './utils/api.js';
 
 export const App: React.FC = () => {
+  const [view, setView] = useState<'new' | 'downloads'>('new');
+  const [revealDownloadId, setRevealDownloadId] = useState<string>();
+  const resolutionContext = useRef('');
+  const operationFocus = useRef<HTMLElement | null>(null);
   const [url, setUrl] = useState('');
   const [auth, setAuth] = useState<AuthContext>({ mode: 'none' });
   const [authRevision, setAuthRevision] = useState(0);
@@ -30,7 +35,7 @@ export const App: React.FC = () => {
   // embedThumbnail desativado por padrão conforme solicitado pelo usuário
   const [downloadOptions, setDownloadOptions] = useState<Omit<CreateDownloadPayload, 'url'>>({
     mode: 'video',
-    videoResolution: '1080p',
+    videoResolution: 'best',
     videoContainer: 'mp4',
     audioFormat: 'mp3',
     audioQuality: '320k',
@@ -39,7 +44,7 @@ export const App: React.FC = () => {
     embedSubtitles: false,
   });
 
-  const { jobs, connected, cancelJob, deleteJob, operationError } = useDownloadEvents();
+  const { jobs, connected, cancelJob, deleteJob, operationError, clearOperationError } = useDownloadEvents();
   const abortControllerRef = useRef<AbortController | null>(null);
   const metadataRequestIdRef = useRef(0);
   useEffect(() => () => { metadataRequestIdRef.current++; abortControllerRef.current?.abort(); }, []);
@@ -50,27 +55,15 @@ export const App: React.FC = () => {
 
   // Busca status do sistema ao carregar
   const fetchSystemStatus = useCallback(async () => {
-    try {
-      {
-        const data: SystemStatus = await apiRequest('/api/system/check', SystemStatusSchema);
-        setSystemStatus(data);
-        setDownloadOptions((prev) => {
-          if (!prev.outputDir) {
-            return {
-              ...prev,
-              outputDir: data.config.defaultDownloadDir,
-            };
-          }
-          return prev;
-        });
-      }
-    } catch (err) {
-      console.error('Falha ao checar status do sistema:', err);
-    }
+    const data: SystemStatus = await apiRequest('/api/system/check', SystemStatusSchema);
+    setSystemStatus(data);
+    setDownloadOptions(previous => previous.outputDir ? previous : {
+      ...previous, outputDir: data.config.defaultDownloadDir,
+    });
   }, []);
 
   useEffect(() => {
-    fetchSystemStatus();
+    void fetchSystemStatus().catch(err => setActionError(errorMessage(err)));
   }, [fetchSystemStatus]);
 
   // Consulta metadados de vídeo da URL com cancelamento automático de requisição anterior
@@ -99,12 +92,15 @@ export const App: React.FC = () => {
         signal: controller.signal,
       });
 
-
       if (metadataRequestIdRef.current !== requestId) return false;
       setMetadata(data);
+      const context = `${normalized}|${authRevision}`;
+      const sameMedia = resolutionContext.current === context;
+      resolutionContext.current = context;
       setDownloadOptions((prev) => ({
         ...prev,
-        videoResolution: prev.videoResolution || '1080p',
+        videoResolution: sameMedia && data.availableResolutions.includes(prev.videoResolution || '')
+          ? prev.videoResolution : data.availableResolutions[0] || 'best',
       }));
       return true;
     } catch (err: unknown) {
@@ -121,7 +117,7 @@ export const App: React.FC = () => {
         abortControllerRef.current = null;
       }
     }
-  }, [auth]);
+  }, [auth, authRevision]);
 
   const handleCancelMetadata = useCallback(() => {
     metadataRequestIdRef.current += 1;
@@ -139,7 +135,7 @@ export const App: React.FC = () => {
   }, [handleCancelMetadata]);
 
   // Inicia o download
-  const handleStartDownload = async () => {
+  const handleStartDownload = async (customFilename?: string) => {
     const rawUrl = url.trim();
     if (!rawUrl) {
       setActionError('Por favor, informe uma URL válida.');
@@ -154,25 +150,18 @@ export const App: React.FC = () => {
     try {
       const payload: CreateDownloadPayload = {
         ...downloadOptions,
+        ...(customFilename !== undefined ? { customFilename } : {}),
         url: targetUrl,
       };
 
-      await apiRequest('/api/downloads', DownloadJobSchema, {
+      const created = await apiRequest('/api/downloads', DownloadJobSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, title: metadata?.url === targetUrl ? metadata.title : undefined, auth }),
       });
 
-
-
-      // Limpa os campos após enfileirar
-      handleCancelMetadata();
-      setUrl('');
-      setMetadata(null);
-      setDownloadOptions((prev) => ({
-        ...prev,
-        customFilename: '',
-      }));
+      setRevealDownloadId(created.id);
+      setView('downloads');
     } catch (err: unknown) {
       setActionError(errorMessage(err));
       setActionDiagnosticId(err instanceof ApiFailure ? err.details.diagnosticId : undefined);
@@ -206,21 +195,15 @@ export const App: React.FC = () => {
     }
   }, [jobs]);
 
-  const activeJobs = jobs.filter((j) => ['downloading', 'processing', 'cancelling'].includes(j.status));
   useEffect(() => {
     const retained = new Set(jobs.map(j => j.id));
     for (const id of notifiedJobIdsRef.current) if (!retained.has(id)) notifiedJobIdsRef.current.delete(id);
   }, [jobs]);
 
-  // Determina se deve usar layout split (quando há conteúdo na coluna direita)
-  const hasContent = url || metadata || jobs.length > 0;
-  const showSplit = hasContent && jobs.length > 0;
-  const isIdle = !url && !metadata && jobs.length === 0;
-
   return (
-    <div className="min-h-screen liquid-bg flex flex-col">
+    <div className="liquid-bg">
       {/* Overlay de iluminação ambiente */}
-      <div className="fixed inset-0 liquid-overlay pointer-events-none z-0" />
+      <div className="liquid-overlay" />
 
       {/* ── TopBar Fixa e Consolidada no Topo Absoluto (Logo, Status, Configurações e Controles de Janela) ── */}
       <TitleBar
@@ -229,38 +212,10 @@ export const App: React.FC = () => {
         sseConnected={connected}
       />
 
-      {/* ── Conteúdo Principal Otimizado para Visão Única (Single-Viewport) ── */}
-      <main className="flex-1 relative z-10 w-full max-w-6xl xl:max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col transition-all duration-500 ease-out">
-
-        {/* Layout dinâmico: Centralizado Ocioso → Centralizado Amplo → Split-Screen */}
-        <div className={`w-full transition-all duration-500 ease-out flex-1 flex flex-col ${
-          isIdle
-            ? 'justify-center items-center max-w-2xl xl:max-w-3xl mx-auto -mt-6 sm:-mt-10'
-            : showSplit
-              ? 'grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start justify-start'
-              : 'max-w-3xl xl:max-w-4xl mx-auto space-y-4 justify-start'
-        }`}>
-
-          {/* ══ Coluna Esquerda: Cartão Unificado DownloaderCard (Input + Opções Contíguas) ══ */}
-          <div className={`space-y-4 ${showSplit ? 'lg:col-span-7' : 'w-full'}`}>
-            {/* Aviso discreto se binários essenciais não puderem ser inicializados */}
-            {systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) && (
-              <div className="glass-pill !bg-amber-50/50 !border-amber-200/50 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-amber-700">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" strokeWidth={1.5} />
-                  <span>
-                    Uma das ferramentas integradas (<strong>yt-dlp</strong> ou <strong>FFmpeg</strong>) não pôde ser inicializada.
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="px-2.5 py-1 glass-button text-xs font-semibold cursor-pointer shrink-0"
-                >
-                  Ver Diagnóstico
-                </button>
-              </div>
-            )}
-
+      <main className="app-main">
+        <div className="ui-mobile-nav"><Tabs label="Área de trabalho" prefix="workspace" value={view} onChange={setView} items={[{value:'new',label:'Novo download'},{value:'downloads',label:`Downloads (${jobs.length})`}]} /></div>
+        <div className={`ui-workspace ui-view-${view}`}>
+        <div className="ui-downloader-column" id="workspace-new-panel" aria-labelledby="workspace-new-tab">
             {/* Cartão Unificado: Entrada de URL, Prévia e Opções integradas sem vão vazio */}
             <DownloaderCard
                 key={authRevision}
@@ -277,53 +232,15 @@ export const App: React.FC = () => {
               defaultFolder={systemStatus?.config.defaultDownloadDir || ''}
               onStartDownload={handleStartDownload}
               isStartingDownload={isStartingDownload}
-              actionError={actionError || operationError}
-              onDismissError={() => { setActionError(null); setActionDiagnosticId(undefined); }}
+              actionError={actionError}
+              onDismissError={() => { setActionError(null); setActionDiagnosticId(undefined); clearOperationError(); }}
             />
           </div>
 
-          {/* ══ Coluna Direita: Fila de Downloads e Histórico (Split-Screen) ══ */}
-          {jobs.length > 0 && (
-            <div className={`space-y-3 ${showSplit ? 'lg:col-span-5' : ''}`}>
-              <div className="flex items-center justify-between pb-2.5 border-b border-white/30">
-                <div className="flex items-center gap-2">
-                  <ListFilter className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-                  <h2 className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight">
-                    Downloads ({jobs.length})
-                  </h2>
-                </div>
-                {activeJobs.length > 0 && (
-                  <span className="font-mono text-[11px] px-2.5 py-0.5 rounded-full glass-segment-active text-blue-600 font-semibold">
-                    {activeJobs.length} em andamento
-                  </span>
-                )}
-              </div>
-
-              {/* Lista de Downloads com rolagem interna suave se houver muitos itens */}
-              <div className="space-y-3 max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
-                {jobs.map((job) => (
-                  <DownloadItem
-                    key={job.id}
-                    job={job}
-                    onCancel={cancelJob}
-                    onDelete={deleteJob}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="ui-downloads-column" id="workspace-downloads-panel" aria-labelledby="workspace-downloads-tab"><DownloadsPanel revealId={revealDownloadId} jobs={jobs} onCancel={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return cancelJob(id); }} onDelete={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return deleteJob(id); }} /></div>
         </div>
       </main>
-
-      {/* ── Rodapé com Contraste Acessível (WCAG AA) ── */}
-      <footer className="relative z-10 border-t border-white/20 py-3 text-center text-xs text-slate-600 font-medium">
-        <p>
-          yt-dlp GUI • Orquestração local segura com Node.js, Express &amp; FFmpeg
-          {typeof window !== 'undefined' && window.electronAPI?.isElectron && (
-            <span className="ml-1 text-slate-500 font-semibold">• Desktop</span>
-          )}
-        </p>
-      </footer>
+      {operationError && <Modal fill returnFocus={operationFocus.current} title="Falha na operação" onClose={clearOperationError} footer={<Button onClick={clearOperationError}>Fechar</Button>}><PagedText dark={false} prose label="Erro da operação" lines={[operationError]} /></Modal>}
 
       {/* ── Modal de Configurações ── */}
       <SettingsModal

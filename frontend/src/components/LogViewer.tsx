@@ -1,95 +1,44 @@
-import React, { useEffect, useRef } from 'react';
-import { Terminal, Copy, Check, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Copy, Check } from 'lucide-react';
+import { PagedText } from './PagedText.js';
+import { Button, MediaTitle, Modal, Notice } from './ui.js';
 
-interface LogViewerProps {
-  logs: string[];
-  title?: string;
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-export const LogViewer: React.FC<LogViewerProps> = ({ logs, title, isOpen, onClose }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = React.useState(false);
-
-  const visibleLogs = React.useMemo(() => {
-    return logs.filter((l) => !l.startsWith('__PROGRESS__'));
-  }, [logs]);
-
+export function LogViewer({ logs, title, isOpen, onClose }: {
+  logs: string[]; title?: string; isOpen: boolean; onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [showTitle, setShowTitle] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleLogs = useMemo(() => logs.filter(line => !line.startsWith('__PROGRESS__')), [logs]);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
   useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  useEffect(() => {
-    if (isOpen && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [visibleLogs, isOpen]);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(visibleLogs.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopied(false); setCopyError(null);
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, [isOpen]);
+  const copy = async () => {
+    setCopyError(null); setCopied(false);
+    try {
+      await navigator.clipboard.writeText(visibleLogs.join('\n'));
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch { setCopyError('Não foi possível copiar. Verifique a permissão da área de transferência.'); }
   };
-
   if (!isOpen) return null;
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="glass-dark rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
-        {/* Topbar do Terminal — Vidro Escuro */}
-        <div className="px-4 py-3 bg-slate-950/50 border-b border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-blue-400" strokeWidth={1.5} />
-            <span className="text-xs font-mono font-medium text-slate-300 truncate max-w-md">
-              {title || 'Terminal yt-dlp'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1 text-xs px-2.5 py-1 glass-button-on-dark cursor-pointer"
-              title="Copiar todos os logs"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.5} /> : <Copy className="w-3.5 h-3.5" strokeWidth={1.5} />}
-              <span>{copied ? 'Copiado' : 'Copiar'}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 glass-icon-button-on-dark cursor-pointer"
-              title="Fechar"
-            >
-              <X className="w-4 h-4" strokeWidth={1.5} />
-            </button>
-          </div>
-        </div>
-
-        {/* Console Output — JetBrains Mono */}
-        <div
-          ref={containerRef}
-          className="p-4 overflow-y-auto font-mono text-xs space-y-1 text-slate-300 flex-1 min-h-[300px]"
-        >
-          {visibleLogs.length === 0 ? (
-            <p className="text-slate-500 italic">Nenhum log registrado ainda...</p>
-          ) : (
-            visibleLogs.map((log, idx) => (
-              <div key={idx} className="leading-relaxed hover:bg-white/5 px-1.5 py-0.5 rounded break-all transition-colors">
-                {log}
-              </div>
-            ))
-          )}
+  return <Modal wide fill title="Logs do download" onClose={onClose} footer={<Button onClick={onClose}>Fechar</Button>}>
+    <div className="ui-log-layout">
+      {title && <div className="ui-log-title"><MediaTitle title={title} /></div>}
+      <div className="ui-terminal-actions">
+        <p className="ui-meta" role="status">{`${visibleLogs.length} ${visibleLogs.length === 1 ? 'linha registrada' : 'linhas registradas'}`}</p>
+        <div className="ui-actions">
+          {title && <Button className="ui-short-details" onClick={() => setShowTitle(true)}>Título da mídia</Button>}
+          <Button onClick={copy} disabled={visibleLogs.length === 0}>{copied ? <Check /> : <Copy />}{copied ? 'Copiado' : 'Copiar logs'}</Button>
         </div>
       </div>
+      {copyError && <Modal title="Falha ao copiar" onClose={() => setCopyError(null)} footer={<Button onClick={() => setCopyError(null)}>OK</Button>}><Notice>{copyError}</Notice></Modal>}
+      {showTitle && title && <Modal fill title="Título da mídia" onClose={() => setShowTitle(false)} footer={<Button onClick={() => setShowTitle(false)}>Fechar</Button>}><PagedText dark={false} prose lines={[title]} label="Título completo" /></Modal>}
+      <PagedText lines={visibleLogs} label="Conteúdo dos logs" />
     </div>
-  );
-};
+  </Modal>;
+}

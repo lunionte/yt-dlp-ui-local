@@ -17,6 +17,8 @@ function setup(maxConcurrentDownloads=1) {
   const config = { ytdlpPath:'yt-dlp',ffmpegPath:'ffmpeg',ffprobePath:'ffprobe',defaultDownloadDir:os.tmpdir(),maxConcurrentDownloads,isEmbedded:false };
   const q = new QueueService({
     config: () => config, prepareDirectory: async p => p, validateAuth: async a => a, verifyFile: async () => {},
+    createWorkspace: async (folder, id) => path.join(folder, `.ytdlp-${id}-test`),
+    publishFile: async (_file, folder, title) => path.join(folder, `${title}.mp4`), removeWorkspace: async () => {},
     run: options => {
       const entry = { options, done:deferred<ProcessResult>(), killed:0, killFails:false };
       processes.push(entry);
@@ -31,7 +33,8 @@ function setup(maxConcurrentDownloads=1) {
   q.on('event', event => { SSEEventSchema.parse(event); events.push(event); });
   const add = (auth = {mode:'none'} as const) => q.addJob(CreateDownloadSchema.parse({url:'https://instagram.com/p/example/',auth}));
   const close = (index=0, exitCode=1, stderr='') => processes[index].done.resolve({exitCode,signal:null,stdout:'',stderr});
-  return {q,processes,events,add,close,config};
+  const finalPath = (index=0) => path.join(path.dirname(path.dirname(processes[index].options.args[processes[index].options.args.indexOf('-o')+1])), 'final.mp4');
+  return {q,processes,events,add,close,config,finalPath};
 }
 test('cancellation keeps intent despite late merger output and only completes on close', async () => {
   const {q,processes,events,add,close}=setup();
@@ -80,14 +83,14 @@ test('auth references never enter public jobs, logs or SSE', async () => {
   const cancel=q.cancelJob(job.id);close();await cancel;
 });
 test('completion requires final output paths; repeated native progress obeys throttle', async () => {
-  const {q,processes,events,add,close}=setup();
+  const {q,processes,events,add,close,finalPath}=setup();
   const job=await add();await tick();
   for(let i=1;i<=5;i++) processes[0].options.onStdoutLine!(`[download] ${i}% of 10.0MiB at 1.0MiB/s ETA 00:05`);
   assert.equal(events.filter(e=>e.type==='PROGRESS').length,1);
   close(0,0);await tick();
   assert.equal(q.getJob(job.id)?.status,'error');
   const second=await add();await tick();
-  processes[1].options.onStdoutLine!('__FILE__'+JSON.stringify(path.join(os.tmpdir(),'final.mp4')));
+  processes[1].options.onStdoutLine!('__FILE__'+JSON.stringify(finalPath(1)));
   close(1,0);await tick();
   assert.equal(q.getJob(second.id)?.status,'completed');assert.equal(q.getJob(second.id)?.outputFiles.length,1);
 });
@@ -115,10 +118,10 @@ test('raising concurrency fills available slots and queue admission stays bounde
   const end=bounded.q.shutdown();bounded.close();await end;
 });
 test('terminal history retention removes oldest jobs through ordered events',async()=>{
-  const {q,processes,add,close,events}=setup();let first='';
+  const {q,processes,add,close,events,finalPath}=setup();let first='';
   for(let i=0;i<202;i++){
     const job=await add();if(!i)first=job.id;await tick();
-    processes[i].options.onStdoutLine!('__FILE__'+JSON.stringify(path.join(os.tmpdir(),'retention-'+i+'.mp4')));
+    processes[i].options.onStdoutLine!('__FILE__'+JSON.stringify(finalPath(i)));
     close(i,0);await tick();
   }
   assert.equal(q.getJobs().length,200);assert.equal(q.getJob(first),undefined);

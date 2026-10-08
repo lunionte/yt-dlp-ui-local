@@ -8,6 +8,7 @@ import { loadConfig, verifyBinaryIntegrity } from '../config/paths.js';
 import { buildYtdlpArgs, validateAuthContext, parseMetadata } from './ytdlp.service.js';
 import { runChildProcess, type RunningProcessHandle } from './runner.service.js';
 import { prepareOutputDirectory } from './path.service.js';
+import { createWorkspace, publishFile, removeWorkspace, requireWorkspaceFile } from './output.service.js';
 import { classifyFailure, OperationError, redactDiagnostic } from './error.service.js';
 import { parseProgressLine, PROGRESS_PREFIX } from './parser.service.js';
 export type { SSEEventData } from '@ytdlp/shared';
@@ -21,6 +22,7 @@ const transitions: Record<DownloadStatus, DownloadStatus[]> = {
 interface QueueDependencies {
   run: typeof runChildProcess; prepareDirectory: typeof prepareOutputDirectory; validateAuth: typeof validateAuthContext;
   config: typeof loadConfig; identity?: typeof verifyBinaryIntegrity; verifyFile: (file: string) => Promise<void>;
+  createWorkspace?: typeof createWorkspace; publishFile?: typeof publishFile; removeWorkspace?: typeof removeWorkspace;
 }
 const dependencies: QueueDependencies = {
   run: runChildProcess, identity: verifyBinaryIntegrity, prepareDirectory: prepareOutputDirectory, validateAuth: validateAuthContext, config: loadConfig,
@@ -35,6 +37,7 @@ export class QueueService extends EventEmitter {
   private cancellations = new Map<string, Promise<boolean>>();
   private lastProgressEmit = new Map<string, number>();
   private sequence = 0;
+  private staged = new Map<string, { workspace: string; title: string; files: Map<string, string> }>();
   private stopping = false;
   private shutdownPromise?: Promise<void>;
   constructor(private readonly deps: QueueDependencies = dependencies) { super(); }
@@ -141,6 +144,7 @@ export class QueueService extends EventEmitter {
   }
   private async startJob(job: DownloadJob): Promise<void> {
     let executionContext: Record<string, string | boolean> = {};
+    let workspace: string | undefined, preserveWorkspace = false;
     job.progress.stage = 'downloading';
     this.transition(job, 'downloading');
     try {
@@ -151,16 +155,34 @@ export class QueueService extends EventEmitter {
       if (this.cancelRequests.has(job.id) || this.stopping) { this.transition(job, 'cancelled'); return; }
       job.outputPath = outputFolder;
       this.emitEvent({ type: 'STATUS', jobId: job.id, payload: { outputPath: outputFolder, progress: job.progress } });
-      const { args } = buildYtdlpArgs(job.options, { config, auth, jobId: job.id, outputFolder });
+      workspace = await (this.deps.createWorkspace || createWorkspace)(outputFolder, job.id);
+      this.staged.set(job.id, { workspace, title: job.title, files: new Map() });
+      if (this.cancelRequests.has(job.id) || this.stopping) { this.transition(job, 'cancelled'); return; }
+      const { args } = buildYtdlpArgs(job.options, { config, auth, jobId: job.id, outputFolder, workspace });
       const handle = this.deps.run({ binaryPath: config.ytdlpPath, args,
         onStdoutLine: line => this.handleOutputLine(job.id, line),
         onStderrLine: line => this.handleOutputLine(job.id, line, true) });
       this.activeHandles.set(job.id, handle);
-      const result = await handle.promise;
+      let executionError: unknown;
+      const result = await handle.promise.catch(error => { executionError = error; return undefined; });
       this.activeHandles.delete(job.id);
+      // Final markers are private until the child closes and each file is published safely.
+      for (const [file, title] of this.staged.get(job.id)!.files) {
+        try {
+          await this.deps.verifyFile(file);
+          const published = await (this.deps.publishFile || publishFile)(file, outputFolder, title);
+          await this.deps.verifyFile(published);
+          job.outputFiles.push(published);
+          this.emitEvent({ type: 'STATUS', jobId: job.id, payload: { outputFiles: [...job.outputFiles] } });
+        } catch (error) {
+          preserveWorkspace = true;
+          throw new OperationError('FILESYSTEM_ERROR', 'download', `Arquivo preservado em ${workspace}: ${String(error)}`, 502);
+        }
+      }
       if (this.cancelRequests.has(job.id) || this.stopping) {
         job.error = undefined; job.errorDetails = undefined; this.transition(job, 'cancelled'); return;
       }
+      if (!result) throw executionError;
       if (result.exitCode !== 0) throw Object.assign(new Error(result.stderr || `Ferramenta encerrou com código ${result.exitCode}`), { stderr: result.stderr });
       if (!job.outputFiles.length) throw new OperationError('EXTRACTOR_ERROR', 'download', 'Processo encerrou sem informar um arquivo final', 502);
       for (const file of job.outputFiles) {
@@ -172,18 +194,37 @@ export class QueueService extends EventEmitter {
     } catch (error) {
       // The runner settles only after close. Preparation failures have no subprocess.
       this.activeHandles.delete(job.id);
-      if (this.cancelRequests.has(job.id) || this.stopping) { job.error = undefined; job.errorDetails = undefined; this.transition(job, 'cancelled'); return; }
+      if (this.cancelRequests.has(job.id) || this.stopping) {
+        if (preserveWorkspace) {
+          const failure = classifyFailure(error, 'download', executionContext);
+          job.error = failure.message; job.errorDetails = failure.details;
+        } else { job.error = undefined; job.errorDetails = undefined; }
+        this.transition(job, 'cancelled'); return;
+      }
       const failure = classifyFailure(error, job.status === 'processing' ? 'postprocessing' : 'download', executionContext);
       job.error = failure.message; job.errorDetails = failure.details;
       this.transition(job, 'error');
+    } finally {
+      this.staged.delete(job.id);
+      if (workspace && job.outputPath && !preserveWorkspace) {
+        try { await (this.deps.removeWorkspace || removeWorkspace)(workspace, job.outputPath, job.id); }
+        catch (error) {
+          const line = redactDiagnostic(`Falha ao limpar temporários: ${String(error)}`).slice(0, 2000);
+          job.logs.push(line); job.logs = job.logs.slice(-200);
+          this.emitEvent({ type: 'LOG', jobId: job.id, payload: { line, isError: true } });
+        }
+      }
     }
   }
   private handleOutputLine(id: string, raw: string, isError = false): void {
     const job = this.jobs.get(id);
     if (!job) return;
     if (raw.startsWith('__INFO__')) {
-      if (this.cancelRequests.has(id) || terminal.has(job.status)) return;
+      if (terminal.has(job.status)) return;
       const metadata = parseMetadata(raw.slice(8), job.url);
+      const staged = this.staged.get(id);
+      if (staged) staged.title = metadata.title;
+      if (this.cancelRequests.has(id)) return;
       const entry = MediaEntrySchema.parse(metadata);
       const existing = job.metadata?.kind === 'collection' ? job.metadata.entries : job.metadata ? [job.metadata] : [];
       const entries = [...existing.filter(e => e.id !== entry.id), entry];
@@ -195,14 +236,14 @@ export class QueueService extends EventEmitter {
       return;
     }
     if (raw.startsWith('__FILE__')) {
-      if (this.cancelRequests.has(id) || terminal.has(job.status)) return;
+      if (terminal.has(job.status)) return;
       try {
         const value: unknown = JSON.parse(raw.slice(8));
         if (typeof value !== 'string' || !job.outputPath || !path.isAbsolute(value)) throw new Error('Caminho de saída inválido');
-        const relative = path.relative(job.outputPath, value);
-        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Arquivo fora da pasta de saída');
-        if (!job.outputFiles.includes(value)) job.outputFiles.push(value);
-        this.emitEvent({ type: 'STATUS', jobId: id, payload: { outputFiles: job.outputFiles } });
+        const staged = this.staged.get(id);
+        if (!staged) throw new Error('Job sem diretório temporário');
+        requireWorkspaceFile(staged.workspace, value);
+        staged.files.set(value, job.options.customFilename || staged.title);
       } catch { throw new OperationError('EXTRACTOR_ERROR', 'download', 'Marcador de arquivo final inválido', 502); }
       return;
     }

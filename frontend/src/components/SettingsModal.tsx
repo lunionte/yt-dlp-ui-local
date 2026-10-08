@@ -1,372 +1,151 @@
-import { openDownloadFolder, selectDownloadFolder } from '../utils/system.js';
-import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Save, RotateCw, FolderOpen, ExternalLink, Loader2, Sparkles } from 'lucide-react';
-import { SystemStatus } from '../types/download.js';
-import { AuthContextSchema, BrowserSchema, DialogResultSchema, SystemStatusSchema, type AuthContext } from '@ytdlp/shared';
+import { useEffect, useId, useRef, useState } from 'react';
+import { FolderOpen, ExternalLink, RotateCw, Save } from 'lucide-react';
+import { AuthContextSchema, BrowserSchema, DialogResultSchema, SystemStatusSchema, type AuthContext, type SystemStatus } from '@ytdlp/shared';
 import { z } from 'zod';
+import { openDownloadFolder, selectDownloadFolder } from '../utils/system.js';
 import { apiRequest, errorMessage } from '../utils/api.js';
+import { Button, Field, Modal, Notice, StatusBadge, Tabs } from './ui.js';
+import { PagedText } from './PagedText.js';
 
-interface SettingsModalProps {
-  isOpen: boolean;
-  auth: AuthContext;
-  onChangeAuth: (auth: AuthContext) => void;
-  onClose: () => void;
-  systemStatus: SystemStatus | null;
-  onRefreshStatus: () => Promise<void>;
-}
+const origins: Record<SystemStatus['tools']['ytdlp']['source'], string> = {
+  resources: 'Incluída no aplicativo', project: 'Disponível no projeto', path: 'Disponível no sistema',
+};
+const toolNames = { ytdlp: 'yt-dlp', ffmpeg: 'FFmpeg', ffprobe: 'FFprobe' } as const;
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({
-  isOpen,
-  auth,
-  onChangeAuth,
-  onClose,
-  systemStatus,
-  onRefreshStatus,
-}) => {
+export function SettingsModal({ isOpen, auth, onChangeAuth, onClose, systemStatus, onRefreshStatus }: {
+  isOpen: boolean; auth: AuthContext; onChangeAuth: (auth: AuthContext) => void;
+  onClose: () => void; systemStatus: SystemStatus | null; onRefreshStatus: () => Promise<void>;
+}) {
+  const [tab, setTab] = useState<'preferences' | 'access' | 'tools'>('preferences');
+  const [toolKey, setToolKey] = useState<keyof typeof toolNames>('ytdlp');
+  const [showHelp, setShowHelp] = useState(false);
+  const messageFocus = useRef<HTMLElement | null>(null);
   const [defaultDownloadDir, setDefaultDownloadDir] = useState('');
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(2);
-  const [saving, setSaving] = useState(false);
   const [authMode, setAuthMode] = useState<AuthContext['mode']>('none');
   const [browser, setBrowser] = useState('edge');
   const [cookiesFile, setCookiesFile] = useState('');
-  const [isBrowsingFolder, setIsBrowsingFolder] = useState(false);
-  const [folderSelected, setFolderSelected] = useState(false);
-  const [openingFolder, setOpeningFolder] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const folderSelectedTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const [saving, setSaving] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'danger' } | null>(null);
+  const initialized = useRef(false);
+  const formId = useId();
+  // Initialize the draft once per opening. A tool refresh must not replace unsaved edits.
   useEffect(() => {
-    return () => {
-      if (folderSelectedTimeoutRef.current) {
-        clearTimeout(folderSelectedTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) { initialized.current = false; return; }
+    if (initialized.current || !systemStatus) return;
+    initialized.current = true;
     setMessage(null);
+    setTab('preferences');
+    setDefaultDownloadDir(systemStatus.config.defaultDownloadDir);
+    setMaxConcurrentDownloads(systemStatus.config.maxConcurrentDownloads);
     setAuthMode(auth.mode);
-    if (auth.mode === 'browser') setBrowser(auth.browser);
-    if (auth.mode === 'file') setCookiesFile(auth.cookiesFile);
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, auth]);
-
-  useEffect(() => {
-    if (systemStatus && isOpen) {
-      setDefaultDownloadDir(systemStatus.config.defaultDownloadDir || '');
-      setMaxConcurrentDownloads(systemStatus.config.maxConcurrentDownloads || 2);
-    }
-  }, [systemStatus, isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleBrowseFolder = async () => {
-    setIsBrowsingFolder(true);
-    try {
-      const selectedPath = await selectDownloadFolder(defaultDownloadDir);
-
-      if (selectedPath) {
-        setDefaultDownloadDir(selectedPath);
-        setFolderSelected(true);
-        if (folderSelectedTimeoutRef.current) {
-          clearTimeout(folderSelectedTimeoutRef.current);
-        }
-        folderSelectedTimeoutRef.current = setTimeout(() => {
-          setFolderSelected(false);
-        }, 2000);
-      }
-    } catch (err) {
-      console.error('Erro ao abrir diálogo nativo:', err);
-    } finally {
-      setIsBrowsingFolder(false);
-    }
+    setBrowser(auth.mode === 'browser' ? auth.browser : 'edge');
+    setCookiesFile(auth.mode === 'file' ? auth.cookiesFile : '');
+  }, [isOpen, systemStatus, auth]);
+  const showError = (error: unknown) => setMessage({ type: 'danger', text: errorMessage(error) });
+  const browse = async () => {
+    setBrowsing(true); setMessage(null);
+    try { const path = await selectDownloadFolder(defaultDownloadDir); if (path) setDefaultDownloadDir(path); }
+    catch (error) { showError(error); } finally { setBrowsing(false); }
   };
-
-  const handleOpenFolder = async (folderPath: string) => {
-    if (!folderPath) return;
-    setOpeningFolder(true);
-    try {
-      await openDownloadFolder(folderPath);
-    } catch (err) {
-      console.error('Erro ao abrir pasta no explorador:', err);
-    } finally {
-      setOpeningFolder(false);
-    }
+  const openFolder = async () => {
+    setOpening(true); setMessage(null);
+    try { await openDownloadFolder(defaultDownloadDir); }
+    catch (error) { showError(error); } finally { setOpening(false); }
   };
-
-  const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await onRefreshStatus();
-    } finally {
-      setIsRefreshing(false);
-    }
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await onRefreshStatus(); } catch (error) { showError(error); }
+    finally { setRefreshing(false); }
   };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage(null);
-
+  const browseCookies = async () => {
     try {
-      const parsedAuth = AuthContextSchema.safeParse(authMode === 'browser' ? { mode: authMode, browser } : authMode === 'file' ? { mode: authMode, cookiesFile } : { mode: authMode });
-      if (!parsedAuth.success) throw new Error('Selecione um navegador ou informe o caminho absoluto do arquivo de cookies.');
+      const result = await apiRequest('/api/system/browse', DialogResultSchema, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'file', title: 'Selecione seu arquivo de cookies', filter: 'Cookies (*.txt)|*.txt' }),
+      });
+      if (!result.cancelled && result.path) setCookiesFile(result.path);
+    } catch (error) { showError(error); }
+  };
+  const save = async (event: React.FormEvent) => {
+    messageFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    event.preventDefault(); setSaving(true); setMessage(null);
+    try {
+      const nextAuth = AuthContextSchema.safeParse(authMode === 'browser' ? { mode: authMode, browser } : authMode === 'file' ? { mode: authMode, cookiesFile } : { mode: authMode });
+      if (!nextAuth.success) throw new Error('Selecione um navegador ou informe o caminho absoluto do arquivo de cookies.');
       await apiRequest('/api/system/config', z.object({ success: z.literal(true), config: SystemStatusSchema.shape.config }), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ defaultDownloadDir: defaultDownloadDir.trim() || undefined, maxConcurrentDownloads }),
       });
-      onChangeAuth(parsedAuth.data);
-      setMessage({ text: 'Configurações salvas; autenticação aplicada nesta sessão.', type: 'success' });
+      onChangeAuth(nextAuth.data);
+      setMessage({ type: 'success', text: 'Preferências salvas. Autenticação aplicada somente nesta sessão.' });
       await onRefreshStatus();
-    } catch (err: unknown) {
-      setMessage({ text: errorMessage(err) || 'Erro de rede ao salvar', type: 'error' });
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { showError(error); } finally { setSaving(false); }
   };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/20 backdrop-blur-md flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="glass-card-strong rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col">
-        {/* Cabeçalho */}
-        <div className="px-6 py-5 border-b border-white/30 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800 tracking-tight">
-              Configurações
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Ferramentas, autenticação e preferências de download
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 glass-icon-button cursor-pointer"
-          >
-            <X className="w-5 h-5" strokeWidth={1.5} />
-          </button>
+  if (!isOpen) return null;
+  return <Modal fill title="Configurações" onClose={onClose}
+    footer={<><Button onClick={onClose}>Fechar</Button><Button variant="primary" type="submit" form={formId} disabled={saving || !systemStatus}><Save />{saving ? 'Salvando…' : 'Salvar alterações'}</Button></>}>
+    <form id={formId} onSubmit={save} className="ui-settings-form" onClickCapture={event => {
+      if (event.target instanceof HTMLElement && event.target.closest('dialog') === event.currentTarget.closest('dialog')) messageFocus.current = event.target.closest('button');
+    }}>
+      <Tabs label="Seções das configurações" prefix="settings" value={tab} onChange={setTab} items={[{value:'preferences',label:'Downloads'},{value:'access',label:'Acesso'},{value:'tools',label:'Ferramentas'}]} />
+      <div className="ui-settings-panel" role="tabpanel" id={`settings-${tab}-panel`} aria-labelledby={`settings-${tab}-tab`}>
+      {tab === 'tools' && <section className="ui-group" aria-label="Ferramentas disponíveis">
+        <div className="ui-tools-toolbar">
+          <select className="glass-select" aria-label="Ferramenta exibida" value={toolKey} onChange={event => setToolKey(event.target.value as keyof typeof toolNames)}>
+            {Object.entries(toolNames).map(([key, name]) => <option key={key} value={key}>{name}{key === 'ffprobe' ? ' — opcional' : ' — necessária'}</option>)}
+          </select>
+          <Button onClick={refresh} disabled={refreshing}><RotateCw className={refreshing ? 'animate-spin' : ''} />Atualizar</Button>
         </div>
-
-        {/* Formulário */}
-        <form onSubmit={handleSave} className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
-          {/* Card de Diagnóstico das Ferramentas Embutidas */}
-          <div className="glass-pill rounded-2xl p-4 space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-blue-500" strokeWidth={1.5} />
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-                  Ferramentas Integradas
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleManualRefresh}
-                disabled={isRefreshing}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 glass-button text-xs font-medium cursor-pointer"
-              >
-                <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-                Atualizar
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 leading-relaxed">
-              O <strong>yt-dlp</strong> e o <strong>FFmpeg</strong> são necessários. O <strong>FFprobe</strong> é opcional. A origem detectada de cada ferramenta aparece abaixo.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-              {/* yt-dlp */}
-              <div className="glass-card rounded-xl p-3 flex flex-col justify-between gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700 font-mono text-[11px]">yt-dlp</span>
-                  {systemStatus?.tools.ytdlp.available ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50">
-                      <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
-                      OK
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-rose-50/50 text-rose-600 !border-rose-200/50">
-                      <AlertCircle className="w-3 h-3" strokeWidth={1.5} />
-                      Erro
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-500 font-mono truncate" title={systemStatus?.tools.ytdlp.version}>
-                  {systemStatus?.tools.ytdlp.available
-                    ? `v${systemStatus.tools.ytdlp.version} • ${systemStatus.tools.ytdlp.source}`
-                    : 'Falha ao iniciar'}
-                </div>
-              </div>
-
-              {/* FFmpeg */}
-              <div className="glass-card rounded-xl p-3 flex flex-col justify-between gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700 font-mono text-[11px]">FFmpeg</span>
-                  {systemStatus?.tools.ffmpeg.available ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50">
-                      <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
-                      OK
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-rose-50/50 text-rose-600 !border-rose-200/50">
-                      <AlertCircle className="w-3 h-3" strokeWidth={1.5} />
-                      Erro
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-600 font-medium leading-tight">
-                  {systemStatus?.tools.ffmpeg.available
-                    ? `Ativo • ${systemStatus.tools.ffmpeg.source}`
-                    : 'Falha ao iniciar'}
-                </div>
-              </div>
-
-              {/* FFprobe */}
-              <div className="glass-card rounded-xl p-3 flex flex-col justify-between gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700 font-mono text-[11px]">FFprobe</span>
-                  {systemStatus?.tools.ffprobe.available ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50">
-                      <CheckCircle2 className="w-3 h-3" strokeWidth={1.5} />
-                      {systemStatus.tools.ffprobe.embedded ? 'OK' : 'PATH'}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold glass-pill text-slate-500">
-                      Opcional
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-600 font-medium leading-tight">
-                  {systemStatus?.tools.ffprobe.available
-                    ? (systemStatus.tools.ffprobe.embedded ? 'Inspetor Ativo' : 'Encontrado no PATH')
-                    : 'Não incluído no Desktop'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <fieldset className="glass-pill rounded-2xl p-4 space-y-3">
-            <legend className="text-xs font-bold text-slate-800">Autenticação no site de origem</legend>
-            <p className="text-xs text-slate-500">Só é usada quando você escolhe uma opção. Vale para prévia e download nesta sessão e não é salva em disco. Uma sessão válida não garante acesso a todo conteúdo.</p>
-            <select className="glass-select w-full p-2 rounded-xl text-sm" value={authMode} onChange={e => setAuthMode(e.target.value as AuthContext['mode'])}>
-              <option value="none">Sem autenticação</option><option value="browser">Usar sessão do navegador</option><option value="file">Usar arquivo de cookies</option>
-            </select>
-            {authMode === 'browser' && <><select className="glass-select w-full p-2 rounded-xl text-sm" value={browser} onChange={e => setBrowser(e.target.value)}>{BrowserSchema.options.map(value => <option key={value} value={value}>{value}</option>)}</select><p className="text-xs text-slate-500">Faça login no site nesse navegador. O sistema pode impedir a leitura dos cookies; nesse caso use um arquivo Netscape exportado por você.</p></>}
-            {authMode === 'file' && <div className="flex gap-2"><input aria-label="Arquivo de cookies" className="glass-input min-w-0 flex-1 rounded-xl p-2 text-xs" value={cookiesFile} onChange={e => setCookiesFile(e.target.value)} placeholder="Caminho absoluto de cookies.txt (formato Netscape)" /><button type="button" className="glass-button px-3" onClick={async () => { try { const result = await apiRequest('/api/system/browse', DialogResultSchema, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'file', title: 'Selecione seu arquivo de cookies', filter: 'Cookies (*.txt)|*.txt' }) }); if (result.path) setCookiesFile(result.path); } catch (error) { setMessage({ text: errorMessage(error), type: 'error' }); } }}>Procurar</button></div>}
-          </fieldset>
-          {/* Preferências de Download */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1.5 tracking-wide">
-                Pasta Padrão de Download
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={defaultDownloadDir}
-                  onChange={(e) => setDefaultDownloadDir(e.target.value)}
-                  placeholder="Ex: C:\Users\nome\Downloads"
-                  className="flex-1 min-w-0 px-3.5 py-2.5 glass-input rounded-xl text-xs sm:text-sm font-mono font-medium text-slate-800 outline-none truncate"
-                />
-                <button
-                  type="button"
-                  onClick={handleBrowseFolder}
-                  disabled={isBrowsingFolder}
-                  title="Selecionar pasta no computador"
-                  className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 disabled:opacity-75 ${
-                    folderSelected
-                    ? 'glass-button-success'
-                      : 'glass-button'
-                  }`}
-                >
-                  {folderSelected ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" strokeWidth={1.5} />
-                  ) : (
-                    <FolderOpen className="w-4 h-4 text-blue-600" strokeWidth={1.5} />
-                  )}
-                  <span className="hidden sm:inline">
-                    {folderSelected ? 'Selecionada' : 'Procurar'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenFolder(defaultDownloadDir)}
-                  disabled={!defaultDownloadDir || openingFolder}
-                  title="Abrir pasta no Explorador de Arquivos do Windows"
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 glass-button text-xs font-bold cursor-pointer shrink-0"
-                >
-                  {openingFolder ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-600" strokeWidth={1.5} />
-                  ) : (
-                    <ExternalLink className="w-4 h-4 text-slate-600" strokeWidth={1.5} />
-                  )}
-                  <span className="hidden sm:inline">Abrir</span>
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1.5 tracking-wide">
-                Limite de Downloads Concorrentes
-              </label>
-              <select
-                value={maxConcurrentDownloads}
-                onChange={(e) => setMaxConcurrentDownloads(parseInt(e.target.value, 10))}
-                className="w-full px-3.5 py-2.5 glass-select rounded-xl text-sm font-medium text-slate-800 cursor-pointer"
-              >
-                <option value={1}>1 processo por vez (Recomendado para conexões modestas)</option>
-                <option value={2}>2 processos concorrentes (Equilíbrio ideal)</option>
-                <option value={3}>3 processos concorrentes</option>
-                <option value={4}>4 processos concorrentes</option>
-                <option value={5}>5 processos concorrentes (Conexões ultrarrápidas)</option>
-              </select>
-            </div>
-          </div>
-
-          {message && (
-            <div
-              className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-                message.type === 'success'
-                  ? 'glass-pill !bg-emerald-50/50 text-emerald-600 !border-emerald-200/50'
-                  : 'glass-pill !bg-rose-50/50 text-rose-600 !border-rose-200/50'
-              }`}
-            >
-              {message.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" strokeWidth={1.5} />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" strokeWidth={1.5} />
-              )}
-              <span>{message.text}</span>
-            </div>
-          )}
-
-          {/* Ações */}
-          <div className="pt-4 border-t border-white/30 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 glass-button text-xs sm:text-sm font-semibold cursor-pointer"
-            >
-              Fechar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-1.5 px-5 py-2.5 liquid-button font-semibold text-xs sm:text-sm cursor-pointer"
-            >
-              <Save className="w-4 h-4" strokeWidth={1.5} />
-              <span>{saving ? 'Salvando...' : 'Salvar Alterações'}</span>
-            </button>
-          </div>
-        </form>
+        {(() => {
+          const tool = systemStatus?.tools[toolKey];
+          return <div className="ui-reading ui-tool">
+            <span className="ui-tool-name">{toolNames[toolKey]}</span>
+            <StatusBadge tone={!tool ? 'neutral' : tool.available ? 'success' : toolKey === 'ffprobe' ? 'neutral' : 'danger'}>{!tool ? 'Verificando' : tool.available ? 'Disponível' : toolKey === 'ffprobe' ? 'Opcional' : 'Indisponível'}</StatusBadge>
+            <p className="ui-tool-info">{tool?.available ? <>{tool.version && <span className="font-mono">{tool.version} · </span>}{origins[tool.source]}</> : tool ? 'Não encontrada neste ambiente.' : 'Consultando disponibilidade…'}</p>
+          </div>;
+        })()}
+      </section>}
+      {tab === 'access' && <section className="ui-group ui-auth-options" aria-labelledby="auth-heading">
+        <h3 id="auth-heading">Acesso ao site de origem</h3>
+        <button className="ui-text-button ui-auth-help" type="button" onClick={() => setShowHelp(true)}>Orientações de acesso</button>
+        <Field id="auth-mode" label="Autenticação">
+          <select id="auth-mode" className="glass-select" value={authMode} onChange={event => setAuthMode(event.target.value as AuthContext['mode'])}>
+            <option value="none">Sem autenticação</option><option value="browser">Usar sessão do navegador</option><option value="file">Usar arquivo de cookies</option>
+          </select>
+        </Field>
+        {authMode === 'browser' && <Field id="auth-browser" label="Navegador">
+          <select id="auth-browser" className="glass-select" value={browser} onChange={event => setBrowser(event.target.value)}>
+            {BrowserSchema.options.map(value => <option key={value} value={value}>{value.charAt(0).toUpperCase() + value.slice(1)}</option>)}
+          </select>
+        </Field>}
+        {authMode === 'file' && <Field id="cookies-file" label="Arquivo de cookies">
+          <input id="cookies-file" className="ui-input font-mono" value={cookiesFile} onChange={event => setCookiesFile(event.target.value)} />
+          <div className="ui-actions"><Button onClick={browseCookies}><FolderOpen />Procurar arquivo</Button></div>
+        </Field>}
+      </section>}
+      {tab === 'preferences' && <section className="ui-group ui-preferences-options" aria-labelledby="preferences-heading">
+        <h3 id="preferences-heading">Downloads</h3>
+        <Field id="default-folder" label="Pasta padrão de download">
+          <input id="default-folder" className="ui-input font-mono" value={defaultDownloadDir} onChange={event => setDefaultDownloadDir(event.target.value)} />
+          <div className="ui-actions"><Button onClick={browse} disabled={browsing}><FolderOpen />{browsing ? 'Procurando…' : 'Procurar pasta'}</Button><Button onClick={openFolder} disabled={!defaultDownloadDir || opening}><ExternalLink />{opening ? 'Abrindo…' : 'Abrir pasta'}</Button></div>
+        </Field>
+        <Field id="concurrency" label="Downloads simultâneos">
+          <select id="concurrency" className="glass-select" value={maxConcurrentDownloads} onChange={event => setMaxConcurrentDownloads(Number(event.target.value))}>
+            {[1, 2, 3, 4, 5].map(count => <option key={count} value={count}>{count} {count === 1 ? 'download por vez' : 'downloads por vez'}</option>)}
+          </select>
+        </Field>
+      </section>}
       </div>
-    </div>
-  );
-};
+      {message && <Modal returnFocus={messageFocus.current} title={message.type === 'success' ? 'Preferências salvas' : 'Falha na operação'} onClose={() => setMessage(null)} footer={<Button onClick={() => setMessage(null)}>OK</Button>}><Notice tone={message.type}>{message.text}</Notice></Modal>}
+      {showHelp && <Modal fill title="Orientações de acesso" onClose={() => setShowHelp(false)} footer={<Button onClick={() => setShowHelp(false)}>Fechar</Button>}><PagedText dark={false} prose label="Orientações de autenticação" lines={[
+        'A autenticação é opcional e vale para prévia e download nesta sessão. Não é salva em disco e não garante acesso a todo conteúdo.',
+        'Navegador: faça login no site nesse navegador. Se a leitura for bloqueada, use um arquivo de cookies Netscape exportado por você.',
+        'Arquivo de cookies: informe um caminho absoluto para um arquivo no formato Netscape.',
+      ]} /></Modal>}
+    </form>
+  </Modal>;
+}

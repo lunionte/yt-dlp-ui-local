@@ -23,7 +23,8 @@
     "tools:verify": "node scripts/tools-manifest.mjs",
     "test:media": "npm run build:shared && node --import tsx --test backend/test/local-media.integration.ts",
     "diagnose": "node --import tsx backend/src/test-runner.ts",
-    "desktop:check-package": "node scripts/check-packaged.mjs"
+    "desktop:check-package": "node scripts/check-packaged.mjs",
+    "test:ui": "npm run build:shared && npm run test:ui --workspace=frontend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

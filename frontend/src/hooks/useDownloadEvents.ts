@@ -58,5 +58,6 @@ export function useDownloadEvents() {
   }, []);
   const cancelJob = useCallback((id: string) => act(id, 'POST'), [act]);
   const deleteJob = useCallback((id: string) => act(id, 'DELETE'), [act]);
-  return { jobs, connected, cancelJob, deleteJob, operationError };
+  const clearOperationError = useCallback(() => setOperationError(null), []);
+  return { jobs, connected, cancelJob, deleteJob, operationError, clearOperationError };
 }

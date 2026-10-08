@@ -113,3 +113,4 @@ export type SystemStatus = z.infer<typeof SystemStatusSchema>;
 export const BrowseSchema = z.object({ type: z.enum(['file', 'folder']).default('folder'), title: z.string().max(200).refine(value => !/[\x00-\x1f]/.test(value), 'Título inválido').optional(), defaultPath: AbsolutePathSchema.optional(), filter: z.string().max(300).optional() }).strict();
 export const OpenFolderSchema = z.object({ folderPath: AbsolutePathSchema.optional() }).strict();
 export const DialogResultSchema = z.object({ path: z.string().nullable(), cancelled: z.boolean() });
+export { normalizeFileStem, FILE_STEM_MAX_BYTES } from './filename.js';

@@ -1,266 +1,107 @@
+import { useRef, useState } from 'react';
+import { FolderOpen, Terminal, Trash2, Ban, Info, AlertCircle } from 'lucide-react';
+import type { DownloadJob, DownloadStage } from '@ytdlp/shared';
 import { openDownloadFolder } from '../utils/system.js';
-import React, { useState } from 'react';
-import {
-  Download,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Terminal,
-  Trash2,
-  Ban,
-  Activity,
-  Zap,
-  HardDrive,
-  FileCheck,
-  FolderOpen,
-} from 'lucide-react';
-import { DownloadJob } from '../types/download.js';
-import type { DownloadStage } from '@ytdlp/shared';
+import { errorMessage } from '../utils/api.js';
+import { Button, MediaTitle, Notice, StatusBadge, Modal } from './ui.js';
 import { LogViewer } from './LogViewer.js';
 import { DiagnosticDetails } from './DiagnosticDetails.js';
+import { PagedText } from './PagedText.js';
 
-interface DownloadItemProps {
-  job: DownloadJob;
-  onCancel: (id: string) => Promise<boolean>;
-  onDelete: (id: string) => Promise<boolean>;
+const stageLabels: Record<DownloadStage, string> = {
+  queued: 'Na fila', downloading: 'Baixando mídia', merging: 'Unindo áudio e vídeo',
+  extracting_audio: 'Extraindo áudio', processing: 'Processando mídia',
+  completed: 'Concluído', cancelling: 'Cancelando…', cancelled: 'Cancelado', error: 'Falhou',
+};
+function available(value: string | undefined) {
+  return value && !['NA', 'N/A', '--', '--:--', 'UNKNOWN'].includes(value.toUpperCase()) ? value : null;
 }
 
-export const DownloadItem: React.FC<DownloadItemProps> = ({ job, onCancel, onDelete }) => {
+export function DownloadItem({ job, onCancel, onDelete }: {
+  job: DownloadJob; onCancel: (id: string) => Promise<boolean>; onDelete: (id: string) => Promise<boolean>;
+}) {
+  const [showError, setShowError] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [openingFolder, setOpeningFolder] = useState(false);
+  const folderOpener = useRef<HTMLElement | null>(null);
   const isCancelling = job.status === 'cancelling' || cancelling;
-  const isActive = job.status === 'downloading' || job.status === 'processing';
-  const isQueued = job.status === 'queued';
   const isCompleted = job.status === 'completed';
-  const isError = job.status === 'error';
-  const isCancelled = job.status === 'cancelled';
-
-  const handleOpenFolder = async () => {
-    try {
-      const targetFolder = job.outputPath || job.options.outputDir;
-      if (!targetFolder) return;
-
-      await openDownloadFolder(targetFolder);
-    } catch (err) {
-      console.error('Erro ao abrir pasta no explorador:', err);
-    }
+  const isTerminal = ['completed', 'cancelled', 'error'].includes(job.status);
+  const isActive = job.status === 'downloading';
+  const isProcessing = job.status === 'processing';
+  const stage = isCancelling ? 'cancelling' : isTerminal || job.status === 'queued' ? job.status : job.progress.stage;
+  const tone = isCompleted ? 'success' : job.status === 'error' ? 'danger' : isCancelling || job.status === 'queued' ? 'warning' : job.status === 'cancelled' ? 'neutral' : 'active';
+  const transferred = available(job.progress.downloadedBytes);
+  const total = available(job.progress.totalBytes);
+  const eta = available(job.progress.eta);
+  const speed = available(job.progress.speed);
+  const openFolder = async () => {
+    folderOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const folder = job.outputPath || job.options.outputDir;
+    if (!folder) return;
+    setOpeningFolder(true); setFolderError(null);
+    try { await openDownloadFolder(folder); } catch (error) { setFolderError(errorMessage(error)); }
+    finally { setOpeningFolder(false); }
   };
-
-  const handleCancel = async () => {
+  const cancel = async () => {
     setCancelling(true);
-    await onCancel(job.id);
-    setCancelling(false);
+    try { await onCancel(job.id); } finally { setCancelling(false); }
   };
+  const format = job.options.mode === 'video'
+    ? `Vídeo · ${job.options.videoResolution === 'best' ? 'Melhor disponível' : job.options.videoResolution} · ${job.options.videoContainer.toUpperCase()}`
+    : `Áudio · ${job.options.audioFormat.toUpperCase()} · ${job.options.audioQuality === 'best' ? 'Melhor disponível' : job.options.audioQuality.replace('k', ' kbps')}`;
 
-  const getStageLabel = (stage: DownloadStage) => {
-    switch (stage) {
-      case 'downloading':
-        return 'Baixando stream';
-      case 'merging':
-        return 'Mesclando faixas (FFmpeg)';
-      case 'extracting_audio':
-        return 'Extraindo áudio (FFmpeg)';
-      case 'processing':
-        return 'Pós-processamento';
-      case 'completed':
-        return 'Concluído';
-      case 'cancelling':
-        return 'Cancelando...';
-      case 'cancelled':
-        return 'Cancelado';
-      case 'error':
-        return 'Falhou';
-      default:
-        return stage || 'Aguardando';
-    }
-  };
-
-  return (
-    <>
-      <div className="w-full glass-card rounded-2xl p-5 transition-all duration-200 hover:bg-white/70">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          {/* Informações Principais */}
-          <div className="flex items-start gap-3.5 flex-1 min-w-0">
-            {job.thumbnail ? (
-              <img
-                src={job.thumbnail}
-                alt={job.title}
-                className="w-16 h-12 object-cover rounded-xl border border-white/60 bg-slate-100/50 shrink-0"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-xl glass-pill flex items-center justify-center text-slate-400 shrink-0">
-                <Download className="w-5 h-5 text-slate-500" strokeWidth={1.5} />
-              </div>
-            )}
-
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-slate-800 truncate" title={job.title}>
-                {job.title}
-              </h3>
-              <div className="flex flex-wrap items-center gap-2 mt-1">
-                <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-md glass-pill text-slate-600">
-                  {job.options.mode === 'video'
-                    ? `Vídeo (${job.options.videoResolution} • ${job.options.videoContainer?.toUpperCase()})`
-                    : `Áudio (${job.options.audioFormat?.toUpperCase()} • ${job.options.audioQuality})`}
-                </span>
-
-                <span
-                  className={`text-[11px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                    isActive
-                      ? 'glass-pill !bg-blue-50/50 text-blue-600'
-                      : isCompleted
-                      ? 'glass-pill !bg-emerald-50/50 text-emerald-600'
-                      : isError
-                      ? 'glass-pill !bg-rose-50/50 text-rose-600'
-                      : isCancelled
-                      ? 'glass-pill text-slate-500'
-                      : 'glass-pill !bg-amber-50/50 text-amber-600'
-                  }`}
-                >
-                  {isActive && <Activity className="w-3 h-3 animate-spin text-blue-500" strokeWidth={1.5} />}
-                  {isCompleted && <CheckCircle2 className="w-3 h-3 text-emerald-500" strokeWidth={1.5} />}
-                  {isError && <XCircle className="w-3 h-3 text-rose-500" strokeWidth={1.5} />}
-                  {isCancelled && <Ban className="w-3 h-3 text-slate-400" strokeWidth={1.5} />}
-                  {isQueued && <Clock className="w-3 h-3 text-amber-500" strokeWidth={1.5} />}
-                  <span>{getStageLabel(job.progress.stage || job.status)}</span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Botões de Ação — Cápsulas de vidro */}
-          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowLogs(true)}
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 glass-button font-medium cursor-pointer"
-              title="Ver logs do yt-dlp"
-            >
-              <Terminal className="w-3.5 h-3.5" strokeWidth={1.5} />
-              <span>Logs</span>
-            </button>
-
-            {(isActive || isQueued || isCancelling) && (
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={isCancelling}
-                className="flex items-center gap-1 text-xs px-3 py-1.5 glass-button-danger font-medium cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Ban className="w-3.5 h-3.5" strokeWidth={1.5} />
-                <span>{isCancelling ? 'Cancelando...' : 'Cancelar'}</span>
-              </button>
-            )}
-
-            {(isCompleted || job.outputFiles.length > 0) && (
-              <button
-                type="button"
-                onClick={handleOpenFolder}
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 glass-button font-medium cursor-pointer"
-                title="Abrir pasta de download no Explorador de Arquivos"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-blue-500" strokeWidth={1.5} />
-                <span className="hidden sm:inline">Pasta</span>
-              </button>
-            )}
-
-            {(isCompleted || isError || isCancelled) && (
-              <button
-                type="button"
-                onClick={() => onDelete(job.id)}
-                className="p-1.5 glass-icon-button-danger cursor-pointer"
-                title="Remover da lista"
-              >
-                <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Barra de Progresso — Shimmer Vítreo */}
-        <div className="mt-4">
-          <div className="flex justify-between items-center text-xs font-semibold text-slate-700 mb-1.5">
-            <span className="flex items-center gap-1.5">
-              <span className="font-mono text-blue-500">{job.progress.percent.toFixed(1)}%</span>
-              <span className="text-slate-300 font-normal">|</span>
-              <span className="text-slate-500 font-normal text-[11px]">{getStageLabel(job.progress.stage)}</span>
-            </span>
-            <span className="text-slate-500 font-mono text-[11px]">{job.progress.eta !== '--:--' ? `ETA: ${job.progress.eta}` : ''}</span>
-          </div>
-
-          <div className="w-full bg-white/40 h-2 rounded-full overflow-hidden border border-white/50">
-            <div
-              className={`h-full transition-all duration-300 rounded-full ${
-                isCompleted
-                  ? 'bg-emerald-500'
-                  : isError
-                  ? 'bg-rose-500'
-                  : isCancelled
-                  ? 'bg-slate-300'
-                  : isActive
-                  ? 'progress-shimmer'
-                  : 'bg-blue-500'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(0, job.progress.percent))}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Métricas em Tempo Real — Tipografia Mono adaptada a colunas estreitas */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/40 text-xs text-slate-600">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px] shrink-0">Velocidade:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
-              {isCompleted ? 'Finalizado' : (job.progress.speed && job.progress.speed !== 'NA' ? job.progress.speed : '--')}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 min-w-0">
-            <HardDrive className="w-3.5 h-3.5 text-indigo-500 shrink-0" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px] shrink-0">Tamanho:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
-              {job.progress.totalBytes && job.progress.totalBytes !== 'NA' ? job.progress.totalBytes : (job.progress.downloadedBytes || '--')}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 min-w-0">
-            <FileCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" strokeWidth={1.5} />
-            <span className="text-slate-600 font-medium text-[11px] shrink-0">Baixado:</span>
-            <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
-              {isCompleted ? (job.progress.totalBytes || job.progress.downloadedBytes || '100%') : (job.progress.downloadedBytes || '0 B')}
-            </span>
-          </div>
-
-          {!isCompleted && (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" strokeWidth={1.5} />
-              <span className="text-slate-600 font-medium text-[11px] shrink-0">Restante:</span>
-              <span className="font-bold text-slate-800 font-mono text-[11px] truncate">
-                {job.progress.eta && job.progress.eta !== 'NA' ? job.progress.eta : '--'}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {job.outputFiles.length > 0 && <p className="mt-3 text-xs text-slate-500">{job.outputFiles.length} arquivo(s) salvo(s).</p>}
-        {/* Mensagem de Erro */}
-        {job.error && (
-          <div className="mt-3 p-2.5 rounded-xl glass-pill !bg-rose-50/50 !border-rose-200/40 text-rose-600 text-xs flex items-start gap-2">
-            <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" strokeWidth={1.5} />
-            <span className="break-all font-mono text-[11px]">{job.error}<DiagnosticDetails id={job.errorDetails?.diagnosticId} /></span>
-          </div>
-        )}
+  return <article className="glass-card ui-panel ui-download" aria-label={`Download: ${job.title}`}>
+    <div className="ui-download-heading">
+      {job.thumbnail && <img src={job.thumbnail} alt="" />}
+      <div className="ui-download-content ui-group">
+        <MediaTitle title={job.title} heading />
+        <div className="ui-meta-row"><span className="ui-meta">{format}</span><StatusBadge tone={tone}>{stageLabels[stage]}</StatusBadge></div>
       </div>
+    </div>
+    {isActive && !isCancelling && <div>
+      <div className="ui-progress-label"><span>Progresso da mídia atual</span><strong className="font-mono">{job.progress.percent.toFixed(1)}%</strong></div>
+      <div className="ui-progress" role="progressbar" aria-label="Progresso da mídia atual" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress.percent}>
+        <div className="ui-progress-fill" style={{ width: `${job.progress.percent}%` }} />
+      </div>
+      <div className="ui-metrics mt-3">
+        {speed && <span>Velocidade: <strong className="font-mono">{speed}</strong></span>}
+        <span>Transferido: <strong className="font-mono">{transferred || '0 B'}{total ? ` de ${total}` : ''}</strong></span>
+        <span>Tempo restante: <strong className={eta ? 'font-mono' : ''}>{eta || 'Calculando…'}</strong></span>
+      </div>
+    </div>}
+    {isProcessing && !isCancelling && <div>
+      <p className="ui-meta mb-2">Preparando os arquivos finais…</p>
+      <div className="ui-progress" role="progressbar" aria-label="Processando mídia"><div className="ui-progress-fill ui-progress-indeterminate" /></div>
+    </div>}
+    {job.status === 'queued' && <p className="ui-meta">Aguardando uma vaga para iniciar.</p>}
+    {isCancelling && <p className="ui-meta" role="status">Aguardando o encerramento do processo.</p>}
+    {(isCompleted || job.outputFiles.length > 0) && <div className="ui-metrics">
+      <span>{job.outputFiles.length} {job.outputFiles.length === 1 ? 'arquivo' : 'arquivos'} {isCompleted ? (job.outputFiles.length === 1 ? 'salvo' : 'salvos') : (job.outputFiles.length === 1 ? 'disponível' : 'disponíveis')}</span>
+      {isCompleted && transferred && <span>{job.outputFiles.length > 1 ? 'Última mídia transferida' : 'Volume transferido'}: <strong className="font-mono">{transferred}</strong></span>}
+    </div>}
 
-      {/* Modal de Logs */}
-      <LogViewer
-        logs={job.logs}
-        title={`Logs: ${job.title}`}
-        isOpen={showLogs}
-        onClose={() => setShowLogs(false)}
-      />
-    </>
-  );
-};
+    <div className="ui-actions ui-download-actions">
+      <Button title="Ver logs" onClick={() => setShowLogs(true)}><Terminal />Ver logs</Button>
+      <div className="ui-download-icon-actions">
+        {job.error && <Button iconOnly variant="danger" title="Detalhes do erro" aria-label="Detalhes do erro" onClick={() => setShowError(true)}><AlertCircle /></Button>}
+        <Button iconOnly title="Detalhes do download" aria-label="Detalhes do download" onClick={() => setShowDetails(true)}><Info /></Button>
+        {!isTerminal && <Button iconOnly variant="danger" title={isCancelling ? 'Cancelando…' : 'Cancelar'} aria-label={isCancelling ? 'Cancelando…' : 'Cancelar'} onClick={cancel} disabled={isCancelling}><Ban /></Button>}
+        {(isCompleted || job.outputFiles.length > 0) && <Button iconOnly title="Abrir pasta" aria-label={openingFolder ? 'Abrindo…' : 'Abrir pasta'} onClick={openFolder} disabled={openingFolder}><FolderOpen /></Button>}
+        {isTerminal && <Button iconOnly variant="danger" title="Remover download da lista" onClick={() => void onDelete(job.id)} aria-label="Remover download da lista"><Trash2 /></Button>}
+      </div>
+    </div>
+    {showError && <Modal fill title="Erro no download" onClose={() => setShowError(false)} footer={<Button onClick={() => setShowError(false)}>Fechar</Button>}><PagedText dark={false} prose label="Mensagem do erro" lines={[job.errorDetails?.message || job.error || 'Falha no download.']} /><DiagnosticDetails id={job.errorDetails?.diagnosticId} /></Modal>}
+    {folderError && <Modal returnFocus={folderOpener.current} title="Não foi possível abrir a pasta" onClose={() => setFolderError(null)} footer={<Button onClick={() => setFolderError(null)}>Fechar</Button>}><Notice>{folderError}</Notice></Modal>}
+    {showDetails && <Modal fill title="Detalhes do download" onClose={() => setShowDetails(false)} footer={<Button onClick={() => setShowDetails(false)}>Fechar</Button>}><PagedText dark={false} prose label="Detalhes da transferência" lines={[
+      job.title, format, `Estado: ${stageLabels[stage]}`,
+      ...(isActive ? [`Velocidade: ${speed || 'Calculando…'}`, `Transferido: ${transferred || '0 B'}${total ? ` de ${total}` : ''}`, `Tempo restante: ${eta || 'Calculando…'}`] : []),
+      ...(isCompleted ? [`${job.outputFiles.length} ${job.outputFiles.length === 1 ? 'arquivo salvo' : 'arquivos salvos'}`, ...(transferred ? [`Volume transferido: ${transferred}`] : [])] : []),
+      ...job.outputFiles,
+    ]} /></Modal>}
+    <LogViewer logs={job.logs} title={job.title} isOpen={showLogs} onClose={() => setShowLogs(false)} />
+  </article>;
+}

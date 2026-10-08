@@ -58,7 +58,7 @@ test('format ceiling applies to every fallback; remux and unique multi-media fil
   assert.equal(one[one.indexOf('-f')+1], '(bestvideo[height<=720][aspect_ratio>=?1]/bestvideo[width<=720][aspect_ratio<1])+bestaudio/best[height<=720][aspect_ratio>=?1]/best[width<=720][aspect_ratio<1]');
   assert.equal(one[one.indexOf('--remux-video')+1], 'mp4');
   const filename = one[one.indexOf('-o')+1];
-  assert.ok(filename.includes('_CON.txt 50%%') && filename.includes('one-%(autonumber)05d-%(playlist_index|0)s-%(id).40B'));
+  assert.ok(filename.includes('_CON.txt 50%%') && filename.includes('.ytdlp-one') && filename.includes('%(autonumber)05d'));
   assert.notEqual(filename,two[two.indexOf('-o')+1]);
 });
 test('portrait and landscape metadata use the shortest dimension, without inventing unknown resolutions', () => {
@@ -67,6 +67,9 @@ test('portrait and landscape metadata use the shortest dimension, without invent
     { width: 720, height: 1280, vcodec: 'vp9' },
     { width: 1920, height: 1080, vcodec: 'h264' },
     { height: 480, vcodec: 'h264' },
+    { width: 4000, vcodec: 'h264' },
+    { height: 2160, vcodec: 'images', protocol: 'mhtml' },
+    { height: 1440, width: 2560, vcodec: 'h264', acodec: 'none' },
     { width: null, height: null, vcodec: 'unknown' },
     { height: 0, vcodec: 'none' },
   ] }), 'https://instagram.com/reels/example/');
