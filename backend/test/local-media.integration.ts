@@ -8,8 +8,49 @@ import { once } from 'node:events';
 import { CreateDownloadSchema, type DownloadJob } from '@ytdlp/shared';
 import { loadConfig, checkToolVersion } from '../src/config/paths.js';
 import { executeBuffered, runChildProcess, getRunningProcessCount } from '../src/services/runner.service.js';
-import { fetchVideoInfo } from '../src/services/ytdlp.service.js';
+import { fetchVideoInfo, buildVideoFormatSelector } from '../src/services/ytdlp.service.js';
 import { QueueService } from '../src/services/queue.service.js';
+
+test('native yt-dlp selection respects portrait/landscape ceilings for separate and combined streams', { timeout: 120000 }, async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ytdlp-ui-formats-'));
+  const config = loadConfig();
+  const fixture = path.join(directory, 'formats.json');
+  const dimensions = [[360, 640], [720, 1280], [1080, 1920], [2160, 3840]];
+  try {
+    for (const portrait of [true, false]) for (const combined of [true, false]) {
+      const formats = dimensions.map(([width, height], index) => ({
+        format_id: `v${index}`, width: portrait ? width : height, height: portrait ? height : width,
+        url: 'https://example.invalid/video.mp4', ext: 'mp4', vcodec: 'h264', acodec: combined ? 'aac' : 'none', tbr: 100 * (index + 1),
+      }));
+      // No webpage_url: yt-dlp otherwise retries extraction from that URL after a selection error.
+      const data = { id: 'fixture', title: 'Format selection fixture', extractor: 'generic', formats: [
+        ...formats, ...(combined ? [] : [{ format_id: 'audio', url: 'https://example.invalid/audio.m4a', ext: 'm4a', vcodec: 'none', acodec: 'aac' }]),
+      ] };
+      await fs.writeFile(fixture, JSON.stringify(data));
+      for (const [resolution, expected] of [['720p', 1], ['1080p', 2], ['best', 3]] as const) {
+        const result = await executeBuffered({ binaryPath: config.ytdlpPath, args: [
+          '--ignore-config', '--no-cache-dir', '--load-info-json', fixture, '--simulate', '--no-check-formats',
+          '-f', buildVideoFormatSelector(resolution), '--print', '__SELECTION__%(.{width,height,format_id})j',
+        ], timeoutMs: 15000 });
+        const line = result.stdout.split(/\r?\n/).find(value => value.startsWith('__SELECTION__'))!;
+        const selected = JSON.parse(line.slice('__SELECTION__'.length));
+        assert.equal(selected.width, formats[expected].width);
+        assert.equal(selected.height, formats[expected].height);
+      }
+      // No unrestricted fallback is allowed, including when only an oversized or unknown format exists.
+      for (const candidate of [formats[3], { ...formats[0], width: undefined, height: undefined }]) {
+        await fs.writeFile(fixture, JSON.stringify({ ...data, formats: [candidate, ...data.formats.filter(format => format.vcodec === 'none')] }));
+        await assert.rejects(executeBuffered({ binaryPath: config.ytdlpPath, args: [
+          '--ignore-config', '--no-cache-dir', '--load-info-json', fixture, '--simulate', '--no-check-formats',
+          '-f', buildVideoFormatSelector('1080p'),
+        ], timeoutMs: 15000 }), /Requested format is not available/);
+      }
+    }
+  } finally {
+    assert.ok(path.isAbsolute(directory) && directory.startsWith(path.join(os.tmpdir(), 'ytdlp-ui-formats-')));
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('actual yt-dlp and FFmpeg download a local multi-media page, remux video and extract audio', {timeout:60000},async()=>{
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'ytdlp-ui-media-'));

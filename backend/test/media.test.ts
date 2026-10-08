@@ -55,11 +55,22 @@ test('format ceiling applies to every fallback; remux and unique multi-media fil
   const options = CreateDownloadSchema.parse({url:'https://x.com/author/status/123', customFilename:'CON.txt 50%', videoResolution:'720p'});
   const one = buildYtdlpArgs(options,{config,auth:{mode:'none'},jobId:'one',outputFolder:os.tmpdir()}).args;
   const two = buildYtdlpArgs(options,{config,auth:{mode:'none'},jobId:'two',outputFolder:os.tmpdir()}).args;
-  assert.equal(one[one.indexOf('-f')+1], 'bestvideo[height<=720]+bestaudio/best[height<=720]');
+  assert.equal(one[one.indexOf('-f')+1], '(bestvideo[height<=720][aspect_ratio>=?1]/bestvideo[width<=720][aspect_ratio<1])+bestaudio/best[height<=720][aspect_ratio>=?1]/best[width<=720][aspect_ratio<1]');
   assert.equal(one[one.indexOf('--remux-video')+1], 'mp4');
   const filename = one[one.indexOf('-o')+1];
   assert.ok(filename.includes('_CON.txt 50%%') && filename.includes('one-%(autonumber)05d-%(playlist_index|0)s-%(id).40B'));
   assert.notEqual(filename,two[two.indexOf('-o')+1]);
+});
+test('portrait and landscape metadata use the shortest dimension, without inventing unknown resolutions', () => {
+  const metadata = parseMetadata(JSON.stringify({ id: 'reel', formats: [
+    { width: 1080, height: 1920, vcodec: 'vp9' },
+    { width: 720, height: 1280, vcodec: 'vp9' },
+    { width: 1920, height: 1080, vcodec: 'h264' },
+    { height: 480, vcodec: 'h264' },
+    { width: null, height: null, vcodec: 'unknown' },
+    { height: 0, vcodec: 'none' },
+  ] }), 'https://instagram.com/reels/example/');
+  assert.deepEqual(metadata.availableResolutions, ['1080p', '720p', '480p']);
 });
 test('hostname parsing avoids query and suffix false positives; unrelated parameters survive', () => {
   assert.equal(isYoutubeUrl('https://example.com/video?ref=youtube.com'),false);

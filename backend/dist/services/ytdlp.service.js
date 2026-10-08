@@ -12,7 +12,7 @@ const entrySchema = z.object({
     id: z.union([z.string(), z.number()]).optional(), title: z.string().nullish(), thumbnail: z.string().nullish(),
     duration: z.number().finite().nonnegative().nullish(), duration_string: z.string().nullish(), uploader: z.string().nullish(),
     channel: z.string().nullish(), description: z.string().nullish(), extractor_key: z.string().nullish(), extractor: z.string().nullish(),
-    formats: z.array(z.object({ height: z.number().finite().nonnegative().nullish(), vcodec: z.string().nullish() }).passthrough()).nullish(),
+    formats: z.array(z.object({ height: z.number().finite().nonnegative().nullish(), width: z.number().finite().nonnegative().nullish(), vcodec: z.string().nullish() }).passthrough()).nullish(),
 }).passthrough();
 const extractionSchema = entrySchema.extend({ _type: z.string().optional(), entries: z.array(entrySchema.nullable()).max(100, 'A coleção excede o limite de 100 mídias').nullish() });
 export function parseMetadata(stdout, url, stderr = '') {
@@ -32,7 +32,10 @@ export function parseMetadata(stdout, url, stderr = '') {
         thumbnail: item.thumbnail || undefined, duration: item.duration ?? undefined,
         durationString: item.duration_string || undefined, uploader: item.uploader || item.channel || undefined,
         description: item.description?.slice(0, 300) || undefined, extractor: item.extractor_key || item.extractor || undefined,
-        availableResolutions: [...new Set((item.formats || []).filter(f => f.height && f.vcodec && f.vcodec !== 'none').map(f => `${f.height}p`))].sort((a, b) => parseInt(b) - parseInt(a)),
+        availableResolutions: [...new Set((item.formats || []).filter(f => f.vcodec && f.vcodec !== 'none').flatMap(f => {
+                const dimensions = [f.width, f.height].filter((value) => typeof value === 'number' && value > 0);
+                return dimensions.length ? [`${Math.min(...dimensions)}p`] : [];
+            }))].sort((a, b) => parseInt(b) - parseInt(a)),
     });
     const collection = data._type === 'playlist' || !!data.entries;
     if (!collection && data.id === undefined)
@@ -188,6 +191,16 @@ export async function shutdownMetadata() {
     await Promise.allSettled(entries.map(e => e.promise));
     cache.clear();
 }
+export function buildVideoFormatSelector(resolution) {
+    if (resolution === 'best')
+        return 'bestvideo+bestaudio/best';
+    const limit = parseInt(resolution, 10);
+    // yt-dlp derives aspect_ratio from the format's dimensions before selection.
+    // Unknown orientation retains the conservative height filter; unknown dimensions are rejected.
+    const landscape = `[height<=${limit}][aspect_ratio>=?1]`;
+    const portrait = `[width<=${limit}][aspect_ratio<1]`;
+    return `(bestvideo${landscape}/bestvideo${portrait})+bestaudio/best${landscape}/best${portrait}`;
+}
 export function buildYtdlpArgs(options, context) {
     const { config, auth, jobId, outputFolder } = context;
     const args = ['--ignore-config', '--no-cache-dir', '--newline', '--no-simulate', '--progress', '--no-playlist', '--no-colors', '--windows-filenames', '--socket-timeout', '20', '--retries', '3', '--max-downloads', '100', ...buildAccessArgs(auth)];
@@ -206,8 +219,7 @@ export function buildYtdlpArgs(options, context) {
             args.push('--audio-quality', options.audioQuality.replace(/k$/, 'K'));
     }
     else {
-        const ceiling = options.videoResolution === 'best' ? '' : `[height<=${parseInt(options.videoResolution, 10)}]`;
-        args.push('-f', `bestvideo${ceiling}+bestaudio/best${ceiling}`, '--merge-output-format', options.videoContainer, '--remux-video', options.videoContainer);
+        args.push('-f', buildVideoFormatSelector(options.videoResolution), '--merge-output-format', options.videoContainer, '--remux-video', options.videoContainer);
     }
     if (options.embedThumbnail)
         args.push('--embed-thumbnail');
