@@ -8,3 +8,5 @@ frontend/dist/
 config.json
 desktop-preferences.json
 shared/dist/
+frontend/test-results/
+frontend/playwright-report/
