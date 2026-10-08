@@ -25,21 +25,10 @@ extraResources:
 
 win:
   target:
-    - target: nsis
-      arch:
-        - x64
     - target: portable
       arch:
         - x64
   icon: resources/icon.ico
-
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: "yt-dlp GUI"
-  uninstallDisplayName: "yt-dlp GUI"
 
 portable:
   artifactName: "yt-dlp-GUI-Portable-${version}.exe"

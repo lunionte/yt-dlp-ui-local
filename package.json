@@ -16,7 +16,7 @@
     "start": "node backend/dist/server.js",
     "desktop:build": "npm run build && npx tsc -p desktop/tsconfig.json",
     "desktop:dev": "npm run desktop:build && node desktop/node_modules/electron/cli.js .",
-    "desktop:dist": "npm run tools:verify && npm run desktop:build && npm --prefix desktop run dist",
+    "desktop:dist": "npm run tools:verify && node scripts/electron-version.mjs && npm run desktop:build && npm --prefix desktop run dist",
     "build:shared": "npm run build --workspace=@ytdlp/shared",
     "predev": "npm run build:shared",
     "test": "npm run build:shared && node scripts/test.mjs",

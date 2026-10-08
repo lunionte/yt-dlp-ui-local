@@ -1,10 +1,10 @@
 # yt-dlp GUI — contexto do projeto e regras para agentes
 
-Leia este arquivo antes de tarefas não triviais. Execute comandos na raiz. Esta é a única documentação Markdown mantida pelo projeto; contratos e comportamento detalhado ficam no código e nos testes. Não recrie documentos paralelos com regras duplicadas.
+Leia este arquivo antes de tarefas não triviais. Execute comandos na raiz. A documentação Markdown do projeto fica em dois arquivos na raiz: `agents.md` é a fonte das regras arquiteturais/operacionais; `README.md` é apenas apresentação visual guiada, de fácil entendimento, para visitantes do GitHub. Não duplicar contratos ou regras técnicas no README nem recriar documentos paralelos; comportamento detalhado fica no código e nos testes.
 
 ## Produto e arquitetura
 
-Interface local para yt-dlp e FFmpeg, disponível como navegador e aplicativo Electron Windows x64 (Setup NSIS e Portable). O mesmo React atende os dois ambientes. O Electron inicia Express no próprio processo e carrega a interface em `127.0.0.1`. FFprobe é opcional. O Portable usa `userData` para preferências; não é um modo com configuração junto ao executável.
+Interface local para yt-dlp e FFmpeg, disponível como navegador e aplicativo Electron exclusivamente Portable Windows x64. O mesmo React atende os dois ambientes. O Electron inicia Express no próprio processo e carrega a interface em `127.0.0.1`. FFprobe é opcional. O Portable usa `userData` para preferências; não é um modo com configuração junto ao executável.
 
 ```text
 React → REST + SSE → Express → fila → runner → yt-dlp / FFmpeg
@@ -43,7 +43,7 @@ npm run build               # shared → backend → frontend
 npm start                   # web local; requer build
 npm run desktop:dev         # build integrado + Electron
 npm run desktop:build
-npm run desktop:dist        # verifica ferramentas; gera Setup/Portable em release/
+npm run desktop:dist        # verifica ferramentas → pergunta versão → build → Portable em release/
 npm test                    # regressões independentes de redes sociais
 npm run test:media          # integração real com mídia sintética e servidor local
 npm run diagnose            # disponibilidade/integridade; exit code não zero em falha
@@ -52,6 +52,14 @@ npm run tools:verify        # versão/hash dos binários devem corresponder ao m
 ```
 
 Depois de instalar, execute `npm run build:shared` antes de rodar tsc isoladamente. Tipagem: `node node_modules/typescript/bin/tsc --noEmit -p <shared|backend|frontend|desktop>/tsconfig.json`. Os testes que criam processos ou usam loopback precisam de um ambiente que permita essas operações; EPERM do sandbox não comprova erro da aplicação.
+
+### Distribuição e versão do Electron
+
+`npm run desktop:dist` executa `tools:verify`, `scripts/electron-version.mjs`, `desktop:build` e o empacotamento `electron-builder --win portable`, nessa ordem. A distribuição gera apenas `yt-dlp-GUI-Portable-<versão>.exe` (Windows x64); diretórios unpacked/validação são intermediários. Não reintroduzir targets de instalação nem variantes optimized. O Portable depende de componentes internos NSIS do electron-builder; eles não são um target de Setup e devem permanecer.
+
+Em terminal interativo, o script mostra a versão atual e pergunta `Deseja alterar a versão? (y/N)`. Enter/n mantém; y/Y solicita `Nova versão:`. Aceita somente versão estável `MAJOR.MINOR.PATCH`, sem zeros iniciais, com cada campo entre 0 e 65535; entrada inválida é solicitada novamente. Ctrl+C/EOF interrompe a distribuição. Sem TTY ou em CI (exceto `CI=0/false`), informa e mantém a versão automaticamente.
+
+A versão altera apenas `desktop/package.json` e as identidades do desktop em `desktop/package-lock.json`; pacotes web/backend/shared e versões de dependências permanecem independentes. Os dois arquivos são preparados antes da substituição e restaurados se houver falha de escrita. A escolha define `app.getVersion()` e o nome do Portable; falha posterior de build mantém a versão escolhida para nova tentativa. Não há commits/tags/publicação automática. `npm run build`, `desktop:build` e `desktop:dev` não perguntam sobre versão. O comando interno `npm --prefix desktop run dist` somente empacota; use o comando da raiz para o fluxo completo.
 
 Para atualizar ferramentas: obtenha os binários da origem indicada no manifesto, verifique sua procedência e mantenha uma cópia recuperável da versão anterior; substitua-os explicitamente e execute `node scripts/tools-manifest.mjs --record`, confira o diff e rode os gates. Registrar hash local não autentica o fornecedor: os pins atuais identificam recursos fornecidos localmente (`local-provided`). Não atualizar ferramentas silenciosamente, não aceitar divergência de hash e não confundir versão da GUI com a do motor. A release inclui o manifesto; recursos divergentes são bloqueados antes do uso. Não há auto-update da GUI ou do yt-dlp.
 
@@ -107,9 +115,10 @@ Para atualizar ferramentas: obtenha os binários da origem indicada no manifesto
 
 A correção da auditoria de 2026-10-07 abrange diagnóstico social, autenticação opcional, coleções/formatos/arquivos, cancelamento/shutdown, shell Unix, contratos/validação, SSE, limites de recursos, lockfiles e manifesto das ferramentas. Padrões acima descrevem implementação, não apenas propostas.
 
-- Validação em 2026-10-07: 30 regressões passaram em `npm test`; classificação/redação (inclusive HTTP 403 com wrapper genérico); auth/cache/deduplicação; carga de metadados; eventos/snapshot; cancelamento/kill/shutdown; parser; HTTP; arquivos; vetores dos diálogos e saída do Electron.
+- Validação em 2026-10-07: 36 regressões passaram em `npm test`; classificação/redação (inclusive HTTP 403 com wrapper genérico); auth/cache/deduplicação; carga de metadados; eventos/snapshot; cancelamento/kill/shutdown; parser; HTTP; arquivos; vetores dos diálogos; saída do Electron e versionamento guiado em `scripts/test` (TTY, CI, entradas inválidas, cancelamento e restauração de manifests).
 - Integração real: página local com duas mídias sintéticas, download de dois MKV e extração de dois MP3, com arquivos finais e coleção reconhecidos.
-- Gates adicionais passaram: `desktop:build`, `diagnose`, `tools:verify` e `desktop:check-package`. Interface conferida no navegador; pacote de validação Windows (`--dir`, sem assinatura) com contratos/Zod/preload e backend/recursos do ASAR carregados no runtime Node do Electron. O smoke test com janela encontrou falha de GPU no ambiente; não foi considerado sucesso visual do desktop nem validação do instalador NSIS.
+- Gates adicionais da auditoria passaram: `desktop:build`, `diagnose`, `tools:verify` e `desktop:check-package`. Interface conferida no navegador; pacote de validação Windows (`--dir`, sem assinatura) com contratos/Zod/preload e backend/recursos do ASAR carregados no runtime Node do Electron. O smoke test com janela encontrou falha de GPU no ambiente; não foi considerado sucesso visual do desktop.
+- Distribuição Portable validada em 2026-10-07: `npm run desktop:dist` passou sem TTY, manteve 1.1.0 e gerou o Portable; Setup/blockmap/optimized e relatórios antigos foram removidos. `npm run desktop:check-package -- release/win-unpacked` confirmou backend, contratos e integridade dos recursos da distribuição atual. Essa verificação não substitui a validação visual da janela Electron.
 - Windows é o alvo de distribuição e da validação funcional atual. As execuções nativas Unix e sessões reais de Instagram/Twitter continuam dependentes de ambiente/conta/URL de reprodução; não declarar sucesso nessas condições apenas por testes locais.
 - Conteúdo público pode exigir sessão ou ser limitado pelo site. Cookies válidos não garantem suporte a um extractor que mudou. Não afirmar que esta correção torna qualquer URL baixável.
 - Manter testes específicos quando surgir uma nova falha; não substituir os gates isolados por testes dependentes das redes sociais.
