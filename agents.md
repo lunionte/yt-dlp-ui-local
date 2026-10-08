@@ -43,7 +43,7 @@ npm run build               # shared → backend → frontend
 npm start                   # web local; requer build
 npm run desktop:dev         # build integrado + Electron
 npm run desktop:build
-npm run desktop:dist        # verifica ferramentas → pergunta versão → build → Portable em release/
+npm run desktop:dist        # ferramentas → versão → build → Portable → remove Portables anteriores
 npm test                    # regressões independentes de redes sociais
 npm run test:media          # integração real com mídia sintética e servidor local
 npm run diagnose            # disponibilidade/integridade; exit code não zero em falha
@@ -55,7 +55,9 @@ Depois de instalar, execute `npm run build:shared` antes de rodar tsc isoladamen
 
 ### Distribuição e versão do Electron
 
-`npm run desktop:dist` executa `tools:verify`, `scripts/electron-version.mjs`, `desktop:build` e o empacotamento `electron-builder --win portable`, nessa ordem. A distribuição gera apenas `yt-dlp-GUI-Portable-<versão>.exe` (Windows x64); diretórios unpacked/validação são intermediários. Não reintroduzir targets de instalação nem variantes optimized. O Portable depende de componentes internos NSIS do electron-builder; eles não são um target de Setup e devem permanecer.
+`npm run desktop:dist` executa `tools:verify`, `scripts/electron-version.mjs`, `desktop:build`, o empacotamento `electron-builder --win portable` e `scripts/clean-portable-releases.mjs`, nessa ordem. A distribuição gera apenas `yt-dlp-GUI-Portable-<versão>.exe` (Windows x64); diretórios unpacked/validação são intermediários. Não reintroduzir targets de instalação nem variantes optimized. O Portable depende de componentes internos NSIS do electron-builder; eles não são um target de Setup e devem permanecer.
+
+Após empacotamento bem-sucedido, a limpeza confirma que o Portable da versão atual existe, é um arquivo regular e possui cabeçalho Windows MZ; então exclui apenas outros arquivos `yt-dlp-GUI-Portable-<versão estável>.exe` diretamente em `release/`. Mantém a versão atual, arquivos alheios e intermediários; não percorre subpastas nem segue links/junctions. Se o build falhar, a limpeza não roda; se o novo executável estiver ausente/inválido, as versões anteriores são preservadas e o comando falha. Falha de exclusão é reportada com exit code não zero. A versão atual é autoritativa, inclusive em downgrade.
 
 Em terminal interativo, o script mostra a versão atual e pergunta `Deseja alterar a versão? (y/N)`. Enter/n mantém; y/Y solicita `Nova versão:`. Aceita somente versão estável `MAJOR.MINOR.PATCH`, sem zeros iniciais, com cada campo entre 0 e 65535; entrada inválida é solicitada novamente. Ctrl+C/EOF interrompe a distribuição. Sem TTY ou em CI (exceto `CI=0/false`), informa e mantém a versão automaticamente.
 
@@ -115,7 +117,7 @@ Para atualizar ferramentas: obtenha os binários da origem indicada no manifesto
 
 A correção da auditoria de 2026-10-07 abrange diagnóstico social, autenticação opcional, coleções/formatos/arquivos, cancelamento/shutdown, shell Unix, contratos/validação, SSE, limites de recursos, lockfiles e manifesto das ferramentas. Padrões acima descrevem implementação, não apenas propostas.
 
-- Validação em 2026-10-07: 36 regressões passaram em `npm test`; classificação/redação (inclusive HTTP 403 com wrapper genérico); auth/cache/deduplicação; carga de metadados; eventos/snapshot; cancelamento/kill/shutdown; parser; HTTP; arquivos; vetores dos diálogos; saída do Electron e versionamento guiado em `scripts/test` (TTY, CI, entradas inválidas, cancelamento e restauração de manifests).
+- Validação em 2026-10-07: 39 regressões passaram em `npm test`; classificação/redação (inclusive HTTP 403 com wrapper genérico); auth/cache/deduplicação; carga de metadados; eventos/snapshot; cancelamento/kill/shutdown; parser; HTTP; arquivos; vetores dos diálogos; saída do Electron; versionamento guiado e limpeza de Portables em `scripts/test` (TTY, CI, entradas inválidas, cancelamento, restauração de manifests, preservação de versões quando novo executável é inválido e rejeição de junctions).
 - Integração real: página local com duas mídias sintéticas, download de dois MKV e extração de dois MP3, com arquivos finais e coleção reconhecidos.
 - Gates adicionais da auditoria passaram: `desktop:build`, `diagnose`, `tools:verify` e `desktop:check-package`. Interface conferida no navegador; pacote de validação Windows (`--dir`, sem assinatura) com contratos/Zod/preload e backend/recursos do ASAR carregados no runtime Node do Electron. O smoke test com janela encontrou falha de GPU no ambiente; não foi considerado sucesso visual do desktop.
 - Distribuição Portable validada em 2026-10-07: `npm run desktop:dist` passou sem TTY, manteve 1.1.0 e gerou o Portable; Setup/blockmap/optimized e relatórios antigos foram removidos. `npm run desktop:check-package -- release/win-unpacked` confirmou backend, contratos e integridade dos recursos da distribuição atual. Essa verificação não substitui a validação visual da janela Electron.

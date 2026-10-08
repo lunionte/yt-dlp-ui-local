@@ -70,6 +70,6 @@ npm --prefix desktop install
 npm run desktop:dev
 ```
 
-Para gerar o Portable localmente, use `npm run desktop:dist`. O comando oferece a alteração da versão e salva o executável em `release/`; não publica uma release automaticamente.
+Para gerar o Portable localmente, use `npm run desktop:dist`. O comando oferece a alteração da versão, salva o executável em `release/` e remove os Portables de outras versões após gerar o novo com sucesso; não publica uma release automaticamente.
 
 Consulte [agents.md](agents.md) para arquitetura, padrões de implementação, comportamento do versionamento e comandos de validação. Este README apresenta o projeto; as regras técnicas são mantidas nesse arquivo de contexto.
