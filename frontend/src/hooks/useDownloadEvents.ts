@@ -7,6 +7,7 @@ import { reconcileSnapshot } from '../utils/reconcile.js';
 export function useDownloadEvents() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
   const [connected, setConnected] = useState(false);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
   useEffect(() => {
     let disposed = false, generation = 0;
@@ -24,6 +25,7 @@ export function useDownloadEvents() {
         const events = buffer || [];
         buffer = undefined;
         setJobs(reconcileSnapshot(snapshot, events));
+        setHasSnapshot(true);
       } catch (error) {
         if (!disposed && request === generation && !(error instanceof Error && error.name === 'AbortError')) {
           buffer = undefined;
@@ -59,5 +61,5 @@ export function useDownloadEvents() {
   const cancelJob = useCallback((id: string) => act(id, 'POST'), [act]);
   const deleteJob = useCallback((id: string) => act(id, 'DELETE'), [act]);
   const clearOperationError = useCallback(() => setOperationError(null), []);
-  return { jobs, connected, cancelJob, deleteJob, operationError, clearOperationError };
+  return { jobs, connected, hasSnapshot, cancelJob, deleteJob, operationError, clearOperationError };
 }

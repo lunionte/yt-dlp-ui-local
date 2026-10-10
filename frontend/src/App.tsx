@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Settings } from 'lucide-react';
 import { Button, Modal, Tabs } from './components/ui.js';
 import { PagedText } from './components/PagedText.js';
 import { TitleBar } from './components/TitleBar.js';
@@ -6,6 +7,7 @@ import { DownloaderCard } from './components/DownloaderCard.js';
 import { DownloadsPanel } from './components/DownloadsPanel.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { useDownloadEvents } from './hooks/useDownloadEvents.js';
+import { useWorkspaceTransition } from './hooks/useWorkspaceTransition.js';
 import {
   CreateDownloadPayload,
   SystemStatus,
@@ -44,7 +46,20 @@ export const App: React.FC = () => {
     embedSubtitles: false,
   });
 
-  const { jobs, connected, cancelJob, deleteJob, operationError, clearOperationError } = useDownloadEvents();
+  const { jobs, connected, hasSnapshot, cancelJob, deleteJob, operationError, clearOperationError } = useDownloadEvents();
+  const hasJobs = jobs.length > 0;
+  const workspace = useRef<HTMLDivElement>(null);
+  useWorkspaceTransition(workspace, hasJobs, hasSnapshot, authRevision);
+  const previousHasJobs = useRef(false);
+  useEffect(() => {
+    if (previousHasJobs.current && !hasJobs) {
+      setView('new');
+      if (document.activeElement === document.body || workspace.current?.querySelector('.ui-downloads-column')?.contains(document.activeElement)) {
+        document.getElementById('media-url')?.focus({ preventScroll: true });
+      }
+    }
+    previousHasJobs.current = hasJobs;
+  }, [hasJobs]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const metadataRequestIdRef = useRef(0);
   useEffect(() => () => { metadataRequestIdRef.current++; abortControllerRef.current?.abort(); }, []);
@@ -205,19 +220,15 @@ export const App: React.FC = () => {
       {/* Overlay de iluminação ambiente */}
       <div className="liquid-overlay" />
 
-      {/* ── TopBar Fixa e Consolidada no Topo Absoluto (Logo, Status, Configurações e Controles de Janela) ── */}
-      <TitleBar
-        systemStatus={systemStatus}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        sseConnected={connected}
-      />
+      <TitleBar sseConnected={connected} />
 
       <main className="app-main">
-        <div className="ui-mobile-nav"><Tabs label="Área de trabalho" prefix="workspace" value={view} onChange={setView} items={[{value:'new',label:'Novo download'},{value:'downloads',label:`Downloads (${jobs.length})`}]} /></div>
-        <div className={`ui-workspace ui-view-${view}`}>
-        <div className="ui-downloader-column" id="workspace-new-panel" aria-labelledby="workspace-new-tab">
+        {hasJobs && <div className="ui-mobile-nav"><Tabs label="Área de trabalho" prefix="workspace" value={view} onChange={setView} items={[{value:'new',label:'Novo download'},{value:'downloads',label:`Downloads (${jobs.length})`}]} /></div>}
+        <div ref={workspace} className={`ui-workspace ui-view-${hasJobs ? view : 'new'}${hasJobs ? '' : ' ui-workspace-empty'}`}>
+        <div className="ui-downloader-column" id="workspace-new-panel">
             {/* Cartão Unificado: Entrada de URL, Prévia e Opções integradas sem vão vazio */}
             <DownloaderCard
+              welcome={!hasJobs}
                 key={authRevision}
                 diagnosticId={actionDiagnosticId}
               url={url}
@@ -237,9 +248,13 @@ export const App: React.FC = () => {
             />
           </div>
 
-          <div className="ui-downloads-column" id="workspace-downloads-panel" aria-labelledby="workspace-downloads-tab"><DownloadsPanel revealId={revealDownloadId} jobs={jobs} onCancel={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return cancelJob(id); }} onDelete={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return deleteJob(id); }} /></div>
+          <div className="ui-downloads-column" id="workspace-downloads-panel" inert={!hasJobs} aria-hidden={!hasJobs}><DownloadsPanel revealId={revealDownloadId} jobs={jobs} onCancel={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return cancelJob(id); }} onDelete={id => { operationFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; return deleteJob(id); }} /></div>
         </div>
       </main>
+      <footer className="ui-app-footer">
+        <Button iconOnly className="app-no-drag" onClick={() => setIsSettingsOpen(true)} aria-label="Abrir configurações"
+          title={systemStatus && (!systemStatus.tools.ytdlp.available || !systemStatus.tools.ffmpeg.available) ? 'Configurações — ferramenta indisponível' : 'Configurações'}><Settings /></Button>
+      </footer>
       {operationError && <Modal fill returnFocus={operationFocus.current} title="Falha na operação" onClose={clearOperationError} footer={<Button onClick={clearOperationError}>Fechar</Button>}><PagedText dark={false} prose label="Erro da operação" lines={[operationError]} /></Modal>}
 
       {/* ── Modal de Configurações ── */}

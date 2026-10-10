@@ -17,6 +17,7 @@ import { PagedText } from './PagedText.js';
 import { normalizeFileStem } from '@ytdlp/shared';
 
 interface DownloaderCardProps {
+  welcome?: boolean;
   url: string;
   diagnosticId?: string;
   onChangeUrl: (url: string) => void;
@@ -35,6 +36,7 @@ interface DownloaderCardProps {
 }
 
 export const DownloaderCard: React.FC<DownloaderCardProps> = ({
+  welcome = false,
   url,
   diagnosticId,
   onChangeUrl,
@@ -236,8 +238,14 @@ export const DownloaderCard: React.FC<DownloaderCardProps> = ({
   const beginRename = () => { setDraftName((options.customFilename || metadata?.title || '').slice(0, 200)); setRenaming(true); };
   const confirmRename = () => { update('customFilename', draftName.trim()); setRenaming(false); };
 
-  return <section className="glass-card ui-downloader" aria-labelledby="download-heading">
-    <header className="ui-pane-header"><h1 id="download-heading">Novo download</h1></header>
+  return <section className="glass-card ui-downloader" aria-label="Novo download">
+    <header className={`ui-pane-header${welcome ? ' ui-pane-header-welcome' : ''}`}>
+      <h1 className="ui-heading-label" aria-hidden={welcome}>Novo download</h1>
+      <div className="ui-welcome" aria-hidden={!welcome}>
+        <img src="/assets/yt-dlp-logo.png" alt="" />
+        <h1>O que vamos baixar hoje?</h1>
+      </div>
+    </header>
     <div className="ui-compact-nav"><Tabs label="Painel compacto" prefix="compact-download" value={compactView} onChange={setCompactView}
       items={[{ value: 'media', label: 'Mídia' }, { value: 'options', label: 'Opções' }]} /></div>
     <div className={'ui-pane-body ui-combined-form ui-compact-' + compactView}>

@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/assets/fonts/instrument-serif-latin-400-normal.woff2') format('woff2');
+}
+
 /* Fontes locais: mantêm a interface disponível sem chamadas a serviços externos. */
 @font-face {
   font-family: 'Inter';
@@ -129,6 +137,9 @@
   --panel: rgba(255, 255, 255, .48);
   --reading: rgba(255, 255, 255, .64);
   --field: rgba(255, 255, 255, .66);
+  --window-border: #52676d;
+  --window-close-border: #be123c;
+  --app-margin: 24px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -160,7 +171,8 @@ h3 { font-size: var(--font-body); line-height: 1.45; font-weight: 650; }
 .liquid-bg { min-height: 100vh; position: relative; isolation: isolate; }
 .liquid-bg::before { content: ''; position: fixed; inset: 0; z-index: -2; background: url('/assets/liquid-bg.jpg') center / cover no-repeat; filter: blur(2px); transform: scale(1.015); }
 .liquid-overlay { position: fixed; inset: 0; z-index: -1; pointer-events: none; background: rgba(236, 242, 243, .36); }
-.app-main { width: 100%; max-width: 1440px; margin: 0 auto; padding: var(--space-6); display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 56px); min-height: 0; }
+.app-main { width: 100%; max-width: 1440px; margin: 0 auto; padding: var(--app-margin); display: flex; flex-direction: column; gap: 12px; height: calc(100dvh - 56px - 40px - var(--app-margin)); min-height: 0; }
+.ui-app-footer { height: calc(40px + var(--app-margin)); padding: 0 var(--app-margin) var(--app-margin); display: flex; align-items: start; }
 .glass-card, .glass-card-strong { background: linear-gradient(135deg, rgba(255,255,255,.24), rgba(222,235,238,.12)), var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius-panel); box-shadow: var(--shadow-panel); backdrop-filter: blur(28px) saturate(1.25); }
 .glass-card-strong { background: var(--reading); }
 .ui-panel { padding: var(--space-6); }
@@ -258,7 +270,8 @@ select { cursor: pointer; text-overflow: ellipsis; }
 .ui-brand img { width: 24px; height: 24px; border-radius: 6px; }
 .ui-topbar-space { flex: 1; height: 100%; }
 .ui-window-controls { display: flex; gap: 4px; }
-.ui-window-controls .ui-button { background: transparent; border-color: transparent; }
+.ui-window-controls .ui-button { border-color: var(--window-border); }
+.ui-window-controls .ui-button-danger { border-color: var(--window-close-border); }
 .ui-window-controls .ui-button:hover { background: #e2e8f0; }
 .ui-window-controls .ui-button-danger:hover { background: #ffe4e6; }
 .app-drag { -webkit-app-region: drag; user-select: none; }
@@ -267,12 +280,21 @@ select { cursor: pointer; text-overflow: ellipsis; }
 
 /* Content-sized glass panels keep form and queue together without empty filler. */
 body { overflow: hidden; }
-.ui-workspace { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .95fr); gap: 24px; flex: 1; min-height: 0; align-items: start; }
+.ui-workspace { --workspace-gap: 24px; --form-width: min(calc((100% - var(--workspace-gap)) * 1.5 / 2.45), calc(100% - var(--workspace-gap) - 300px)); display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .95fr); gap: var(--workspace-gap); flex: 1; min-height: 0; align-items: start; }
 .ui-downloader-column, .ui-downloads-column { min-width: 0; min-height: 0; height: 100%; }
-.ui-downloader-column { container-type: inline-size; }
+.ui-downloader-column { container-type: inline-size; grid-column: 1; grid-row: 1; display: flex; flex-direction: column; }
+.ui-downloads-column { grid-column: 2; grid-row: 1; }
+.ui-workspace-empty .ui-downloader-column { grid-column: 1 / -1; width: var(--form-width); justify-self: center; justify-content: safe center; }
+.ui-workspace-empty .ui-downloads-column { visibility: hidden; pointer-events: none; }
 .ui-mobile-nav, .ui-compact-nav { display: none; }
 .ui-downloader { display: flex; flex-direction: column; gap: 16px; padding: 20px; max-height: 100%; }
 .ui-pane-header h1 { font-size: 22px; }
+.ui-pane-header { position: relative; flex-shrink: 0; }
+.ui-welcome { position: absolute; inset: 0; display: flex; align-items: center; gap: 16px; opacity: 0; pointer-events: none; }
+.ui-welcome img { width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0; }
+.ui-welcome h1 { font-family: 'Instrument Serif', Georgia, serif; font-size: 32px; line-height: 1.1; font-weight: 400; letter-spacing: 0; }
+.ui-pane-header-welcome .ui-welcome { position: relative; opacity: 1; }
+.ui-pane-header-welcome .ui-heading-label { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .ui-combined-form, .ui-media-block, .ui-options-block { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
 .ui-preview .ui-meta-row { gap: 4px 8px; }
 .ui-preview .ui-meta-row > span:first-child { max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -324,6 +346,9 @@ body { overflow: hidden; }
 .ui-terminal-prose { font-family: Inter, sans-serif; font-size: 16px; line-height: 1.5; }
 .ui-short-details { display: none; }
 @container (max-width: 560px) {
+  .ui-welcome { gap: 12px; }
+  .ui-welcome img { width: 32px; height: 32px; border-radius: 8px; }
+  .ui-welcome h1 { font-size: 26px; }
   .ui-downloader { padding: 12px; gap: 12px; }
   .ui-combined-form, .ui-media-block, .ui-options-block { gap: 12px; }
   .ui-url-row .ui-button { width: 40px; min-height: 40px; height: 40px; padding: 0; }
@@ -338,32 +363,39 @@ body { overflow: hidden; }
   .ui-pane-footer .ui-start { padding: 10px 12px; }
 }
 @media (max-width: 900px) and (min-width: 700px) {
-  .app-main { padding: 16px; }
-  .ui-workspace { grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+  :root { --app-margin: 16px; }
+  .ui-workspace { --workspace-gap: 16px; --form-width: calc(100% - 316px); grid-template-columns: minmax(0, 1fr) 300px; }
 }
 @media (max-width: 699px) {
-  .app-main { padding: 12px; }
+  :root { --app-margin: 12px; }
   .ui-mobile-nav { display: block; }
   .ui-workspace { display: flex; }
   .ui-workspace > div { width: 100%; }
+  .ui-workspace-empty .ui-downloader-column { width: 100%; }
+  .ui-workspace-empty .ui-downloads-column { display: none; }
   .ui-view-new .ui-downloads-column, .ui-view-downloads .ui-downloader-column { display: none; }
   .ui-topbar { padding: 0 12px; gap: 8px; }
   .ui-brand { font-size: 14px; }
 }
 @media (max-height: 680px) {
-  .ui-downloader { padding: 12px; gap: 8px; }
+  .ui-downloader { padding: 8px; gap: 8px; }
   .ui-combined-form, .ui-media-block, .ui-options-block { gap: 8px; }
-  .ui-downloader .ui-preview { padding: 8px; }
+  .ui-downloader .ui-preview { padding: 4px; }
   .ui-preview .ui-media-title h3 { font-size: 14px; }
   .ui-preview .ui-meta-row { display: none; }
-  .ui-pane-footer { padding-top: 8px; }
+  .ui-pane-footer { padding-top: 4px; }
   .ui-downloads-pane { padding: 12px; gap: 8px; }
   .ui-downloads-body .ui-download { padding: 12px; gap: 6px; }
 }
 @media (max-height: 500px) {
-  .app-main { padding: 8px; gap: 8px; }
-  .ui-downloader { height: 100%; padding: 8px; gap: 8px; }
+  .ui-topbar { height: 44px; }
+  .app-main { height: calc(100dvh - 44px - 40px - var(--app-margin)); padding: 8px; gap: 8px; }
+  .ui-downloader { height: 100%; padding: 8px; gap: 4px; }
   .ui-pane-header { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ui-pane-header-welcome { position: relative; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .ui-pane-header-welcome .ui-welcome { gap: 8px; }
+  .ui-pane-header-welcome .ui-welcome img { width: 24px; height: 24px; border-radius: 6px; }
+  .ui-pane-header-welcome .ui-welcome h1 { font-size: 22px; }
   .ui-compact-nav { display: block; }
   .ui-tabs button { min-height: 40px; padding: 4px 8px; }
   .ui-combined-form { flex: 1; overflow: hidden; }
@@ -378,7 +410,7 @@ body { overflow: hidden; }
   .ui-output-band { display: grid; grid-template-columns: 1fr 1fr; }
   .ui-output-row { padding-left: 8px; gap: 4px; }
   .ui-output-row > label { width: auto; }
-  .ui-downloader .ui-pane-footer { padding-top: 8px; }
+  .ui-downloader .ui-pane-footer { padding-top: 4px; }
   .ui-check-prefix { display: none; }
   .ui-checks { gap: 8px; }
   .ui-settings-panel .ui-preferences-options, .ui-settings-panel .ui-auth-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
